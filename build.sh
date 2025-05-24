@@ -19,12 +19,14 @@ if [ -d obj ];then
 
   musl_directory=${build_directory}
 
+  pushd ${src_directory}
+
   pushd ${src_directory}/musl
   env CFLAGS="$CFLAGS -Os -ffunction-sections -fdata-sections" 
   env LDFLAGS='-Wl,--gc-sections' ./configure --prefix=${musl_directory}
   make -j32 install
 
-  popd
+  popd #src
 
   echo "############# Setting CC to musl-gcc"
 
@@ -43,6 +45,47 @@ if [ -d obj ];then
              --enable-default-hash-style=gnu
   make -j32
   make -j32 install
+
+  popd #src
+
+  pushd ${src_directory}/gcc/libstdc++-v3
+  
+
+  mkdir obj
+  pushd ${src_directory}/gcc/libstdc++-v3/obj
+
+  
+
+  popd
+
+  pushd ${src_directory}/gcc
+
+  mkdir obj
+  pushd ${src_directory}/gcc/obj
+
+../configure                  \
+    --prefix=${build_directory}/tools       \
+    --with-sysroot=${build_directory}       \
+    --with-newlib             \
+    --without-headers         \
+    --enable-default-pie      \
+    --enable-default-ssp      \
+    --disable-nls             \
+    --disable-shared          \
+    --disable-multilib        \
+    --disable-threads         \
+    --disable-libatomic       \
+    --disable-libgomp         \
+    --disable-libquadmath     \
+    --disable-libssp          \
+    --disable-libvtv          \
+    --enable-languages=c,c++
+
+  make -j32
+  make install
+
+
+  popd #src
 
 else
   mkdir -p obj/tools
