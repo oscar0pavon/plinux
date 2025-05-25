@@ -68,7 +68,7 @@
 /* Provide trailing slash, since mostly used for building pathnames. */
 #define	_PATH_DEV	"/dev/"
 #define	_PATH_TMP	"/tmp/"
-#define	_PATH_VARDB	"/var/db/"
+#define	_PATH_VARDB	"/var/lib/nss_db/"
 #define	_PATH_VARRUN	"/var/run/"
 #define	_PATH_VARTMP	"/var/tmp/"
 

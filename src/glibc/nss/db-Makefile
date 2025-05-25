@@ -21,7 +21,7 @@ DATABASES = $(wildcard /etc/passwd /etc/group /etc/ethers /etc/protocols \
 		       /etc/rpc /etc/services /etc/shadow /etc/gshadow \
 		       /etc/netgroup)
 
-VAR_DB = /var/db
+VAR_DB = /var/lib/nss_db
 
 AWK = awk
 MAKEDB = makedb --quiet
