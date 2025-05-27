@@ -1,3 +1,6 @@
 *.o
 obj
 build/
+
+pgetty
+pinit

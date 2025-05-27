@@ -7,12 +7,9 @@ else
 fi
 
 
-build_directory=""
-src_directory=""
-musl_directory=""
+export MAKEFLAGS=-j32
 
 if [ -d obj ];then
-  echo "building"
   working_directory=$(pwd)
   build_directory=${working_directory}/obj
   src_directory=${working_directory}/src
@@ -20,6 +17,43 @@ if [ -d obj ];then
   musl_directory=${build_directory}
 
   target=$(uname -m)-plinux-gnu
+fi
+
+pushd ${src_directory}/pboot
+
+make
+
+popd
+
+pushd ${src_directory}/linux
+
+make pavon_defconfig
+
+make
+
+popd
+
+pushd ${src_directory}/pinit
+
+make
+
+popd
+
+
+pushd ${src_directory}/pgetty
+
+make
+
+popd
+
+
+exit
+
+build_directory=""
+src_directory=""
+musl_directory=""
+
+if [ -d obj ];then
 
   pushd ${src_directory}
 
