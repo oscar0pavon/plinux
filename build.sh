@@ -19,25 +19,17 @@ if [ -d obj ];then
 
   musl_directory=${build_directory}
 
+  target=$(uname -m)-plinux-gnu
+
   pushd ${src_directory}
 
-  pushd ${src_directory}/musl
-  env CFLAGS="$CFLAGS -Os -ffunction-sections -fdata-sections" 
-  env LDFLAGS='-Wl,--gc-sections' ./configure --prefix=${musl_directory}
-  make -j32 install
-
-  popd #src
-
-  echo "############# Setting CC to musl-gcc"
-
-  export CC="${musl_directory}/bin/musl-gcc"
-  
   echo "############# Building Binutils"
   pushd ${src_directory}/binutils
   mkdir obj
   pushd ${src_directory}/binutils/obj
   ../configure --prefix=${build_directory}/tools \
              --with-sysroot=${build_directory} \
+             --target=${target}       \
              --disable-nls       \
              --enable-gprofng=no \
              --disable-werror    \
@@ -48,23 +40,16 @@ if [ -d obj ];then
 
   popd #src
 
-  pushd ${src_directory}/gcc/libstdc++-v3
-  
-
-  mkdir obj
-  pushd ${src_directory}/gcc/libstdc++-v3/obj
-
-  
-
-  popd
 
   pushd ${src_directory}/gcc
 
   mkdir obj
   pushd ${src_directory}/gcc/obj
 
-../configure                  \
+  ../configure                              \
+    --target=${target}                      \
     --prefix=${build_directory}/tools       \
+    --with-glibc-version=2.41               \
     --with-sysroot=${build_directory}       \
     --with-newlib             \
     --without-headers         \
@@ -79,6 +64,7 @@ if [ -d obj ];then
     --disable-libquadmath     \
     --disable-libssp          \
     --disable-libvtv          \
+    --disable-libstdcxx       \
     --enable-languages=c,c++
 
   make -j32
