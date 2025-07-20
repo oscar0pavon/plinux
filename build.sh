@@ -14,6 +14,13 @@ popd(){
   command popd "$@" > /dev/null
 }
 
+if [ ! -d obj ];then
+  mkdir obj
+  mkdir -p obj/usr/bin
+  mkdir -p obj/usr/lib
+  mkdir -p obj/sbin
+fi
+
 if [ -d obj ];then
 
   musl_directory=${build_directory}
@@ -67,6 +74,8 @@ pushd ${src_directory}/pboot
 echo "Building bootloader"
 make &> /dev/null
 
+cp pboot ${build_directory}/pboot
+
 popd
 
 pushd ${src_directory}/linux
@@ -77,6 +86,8 @@ make pavon_defconfig &> /dev/null
 
 make &> /dev/null
 
+cp arch/x86_64/boot/bzImage ${build_directory}/vmlinuz
+
 popd
 
 
@@ -85,6 +96,8 @@ echo "Building init PID 1"
 pushd ${src_directory}/pinit
 
 make &> /dev/null
+
+cp pinit ${build_directory}/pinit
 
 popd
 
