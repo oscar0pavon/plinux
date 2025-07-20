@@ -19,6 +19,8 @@ if [ ! -d obj ];then
   mkdir -p obj/usr/bin
   mkdir -p obj/usr/lib
   mkdir -p obj/sbin
+  mkdir -p obj/dev
+  mkdir -p obj/proc
 fi
 
 if [ -d obj ];then
@@ -46,6 +48,8 @@ if [ "$1" == "virt" ]; then
   cp ${build_directory}/vmlinuz disk/boot/vmlinuz
 
   ##### Root filesystem
+
+  cp -r ${build_directory}/* disk/root
 
   umount /dev/loop0p1
   umount /dev/loop0p2
