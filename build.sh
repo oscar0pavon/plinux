@@ -2,6 +2,10 @@
 
 export MAKEFLAGS=-j32
 
+working_directory=$(pwd)
+src_directory=${working_directory}/src
+build_directory=${working_directory}/obj
+
 pushd(){
   command pushd "$@" > /dev/null
 }
@@ -11,13 +15,30 @@ popd(){
 }
 
 if [ -d obj ];then
-  working_directory=$(pwd)
-  build_directory=${working_directory}/obj
-  src_directory=${working_directory}/src
 
   musl_directory=${build_directory}
 
   target=$(uname -m)-plinux-gnu
+fi
+
+if [ "$1" == "virt" ]; then
+  echo "Virtual Machine"
+  pushd virtual_machine
+
+  losetup -P /dev/loop0 disk.raw
+  
+  mount /dev/loop0p1 disk/boot
+  mount /dev/loop0p2 disk/root
+  
+
+  umount /dev/loop0p1
+  umount /dev/loop0p2
+
+  losetup -d /dev/loop0
+
+  popd
+
+  exit
 fi
 
 if [ "$1" == "tools" ]; then
