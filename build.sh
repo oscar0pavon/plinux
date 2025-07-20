@@ -1,13 +1,14 @@
 #!/bin/sh
 
-if [ "$1" == "tools" ]; then
-  echo "building tools"
-else
-  echo "none arguments"
-fi
-
-
 export MAKEFLAGS=-j32
+
+pushd(){
+  command pushd "$@" > /dev/null
+}
+
+popd(){
+  command popd "$@" > /dev/null
+}
 
 if [ -d obj ];then
   working_directory=$(pwd)
@@ -19,30 +20,59 @@ if [ -d obj ];then
   target=$(uname -m)-plinux-gnu
 fi
 
-pushd ${src_directory}/pboot
+if [ "$1" == "tools" ]; then
+  echo "building tools"
+else
+  echo "Building standard"
+fi
 
-make
+if [ "$1" == "clean" ]; then
+  pushd ${src_directory}/linux
+  make clean
+  popd
+  pushd ${src_directory}/pboot
+  make clean
+  popd
+  pushd ${src_directory}/pinit
+  make clean
+  popd
+  exit
+
+fi
+
+################## Build ###################
+
+pushd ${src_directory}/pboot
+echo "Building bootloader"
+make &> /dev/null
 
 popd
 
 pushd ${src_directory}/linux
 
-make pavon_defconfig
+echo "Building kernel"
 
-make
+make pavon_defconfig &> /dev/null
+
+make &> /dev/null
 
 popd
+
+
+echo "Building init PID 1"
 
 pushd ${src_directory}/pinit
 
-make
+make &> /dev/null
 
 popd
 
 
+echo "Building getty"
+
 pushd ${src_directory}/pgetty
 
-make
+make &> /dev/null
 
 popd
 
