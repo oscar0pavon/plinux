@@ -1,4 +1,5 @@
 #include "programs.h"
+#include <stdio.h>
 
 #define TIMEO	30
 
@@ -232,6 +233,7 @@ void reboot_system(){
 }
 
 int main(){
+  printf("pboot!\n");
   
   boot_time = fopen("boot_time","w");
   if(!boot_time){
