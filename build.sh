@@ -36,7 +36,12 @@ if [ "$1" == "virt" ]; then
   
   mount /dev/loop0p1 disk/boot
   mount /dev/loop0p2 disk/root
-  
+
+  mkdir -p disk/boot/EFI/BOOT
+  cp ${build_directory}/pboot disk/boot/EFI/BOOT/BOOTX64.EFI
+  cp pboot.conf disk/boot
+
+  cp ${build_directory}/vmlinuz disk/boot/vmlinuz
 
   umount /dev/loop0p1
   umount /dev/loop0p2
