@@ -109,6 +109,15 @@ popd
 
 
 
+echo "Building bash"
+
+pushd ${src_directory}/bash
+
+./configure --without-bash-malloc &> /dev/null
+
+make &> /dev/null
+
+popd
 
 echo "SUCCESS you have plinux"
 exit
