@@ -37,11 +37,15 @@ if [ "$1" == "virt" ]; then
   mount /dev/loop0p1 disk/boot
   mount /dev/loop0p2 disk/root
 
+
+  ##### Boot
   mkdir -p disk/boot/EFI/BOOT
   cp ${build_directory}/pboot disk/boot/EFI/BOOT/BOOTX64.EFI
   cp pboot.conf disk/boot
 
   cp ${build_directory}/vmlinuz disk/boot/vmlinuz
+
+  ##### Root filesystem
 
   umount /dev/loop0p1
   umount /dev/loop0p2
@@ -113,6 +117,8 @@ pushd ${src_directory}/pgetty
 
 make &> /dev/null
 
+cp pgetty ${build_directory}/usr/bin
+
 popd
 
 
@@ -144,6 +150,8 @@ pushd ${src_directory}/shadow
 
 make &> /dev/null
 
+make exec_prefix=${build_directory}/usr install &> /dev/null
+
 popd
 
 
@@ -152,9 +160,12 @@ echo "Building bash"
 
 pushd ${src_directory}/bash
 
-./configure --without-bash-malloc &> /dev/null
+./configure --prefix=${build_directory}/usr \
+  --without-bash-malloc &> /dev/null
 
 make &> /dev/null
+
+make install &> /dev/null
 
 popd
 
