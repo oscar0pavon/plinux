@@ -4,3 +4,6 @@ build/
 
 pgetty
 pinit
+
+src/bash/*
+src/shadow/*
