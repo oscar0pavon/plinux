@@ -32,6 +32,10 @@ fi
 
 if [ "$1" == "virt" ]; then
   echo "Virtual Machine"
+  
+  umount /dev/loop0p1
+  umount /dev/loop0p2
+
   pushd virtual_machine
 
   losetup -P /dev/loop0 disk.raw
@@ -172,6 +176,29 @@ make &> /dev/null
 make install &> /dev/null
 
 popd
+
+
+echo "Building glibc"
+
+pushd ${src_directory}/glibc
+
+mkdir build
+pushd build
+
+../configure --prefix=${build_directory}/usr   \
+             --disable-werror                \
+             --disable-nscd                  \
+             libc_cv_slibdir=/usr/lib        \
+             --enable-stack-protector=strong \
+             --enable-kernel=5.4 &> /dev/null
+
+make &> /dev/null
+
+make install &> /dev/null
+
+popd
+popd
+
 
 echo "SUCCESS you have plinux"
 exit
