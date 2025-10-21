@@ -10,3 +10,4 @@ src/shadow/*
 
 virtual_machine/disk.raw
 virtual_machine/disk
+src/plogin/plogin
