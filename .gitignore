@@ -7,3 +7,6 @@ pinit
 
 src/bash/*
 src/shadow/*
+
+virtual_machine/disk.raw
+virtual_machine/disk

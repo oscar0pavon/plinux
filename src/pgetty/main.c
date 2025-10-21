@@ -52,7 +52,7 @@ static char hn[MAXHOSTNAMELEN + 1];
 /* process and session ID of this program */
 static pid_t pid, sid;
 /* login program invoked */
-static char *loginprog = "/bin/login";
+static char *loginprog = "/usr/bin/login";
 /* Do not send a reset string to the terminal. */
 static int noclear = 0;
 /* Do not print a newline. */
@@ -206,8 +206,8 @@ static void open_tty (void)
 
 	/* Write a reset string to the terminal. This is very linux-specific
 	   and should be checked for other systems. */
-	if (noclear == 0)
-		write (0, "\033c", 2);
+// 	if (noclear == 0)
+// write (0, "\033c", 2);
 
 	sigaction (SIGHUP, &sa_old, NULL);
 }
@@ -377,8 +377,11 @@ int main (int argc, char **argv)
 	hn[MAXHOSTNAMELEN] = '\0';
 	pid = getpid ();
 	sid = getsid (0);
-
+#if	defined(s390) || defined(__s390__)
+	putenv ("TERM=dumb");
+#else
 	putenv ("TERM=linux");
+#endif
 
 	while ((c = getopt_long (argc, argv, "a:d:l:n:w:r:", long_options,
 		(int *) 0)) != EOF) {
@@ -388,8 +391,20 @@ int main (int argc, char **argv)
 		case 'a':
 			autologin = optarg;
 			break;
+		case 'd':
+			delay = atoi (optarg);
+			break;
 		case 'l':
 			loginprog = optarg;
+			break;
+		case 'n':
+			priority = atoi (optarg);
+			break;
+		case 'r':
+			ch_root = optarg;
+			break;
+		case 'w':
+			ch_dir = optarg;
 			break;
 		default:
 			usage ();
@@ -405,15 +420,35 @@ int main (int argc, char **argv)
 		tty += 5;
 
 	update_utmp ();
-	
+	if (delay)
+		sleep (delay);
 	open_tty ();
+	if (autologin) {
+		do_prompt (0);
+		printf ("login: %s (automatic login)\n", autologin);
+		logname = autologin;
+	} else
+		while ((logname = get_logname ()) == 0)
+			/* do nothing */ ;
 
-	do_prompt (0);
-
-	logname = autologin;
+	if (ch_root) {
+		if (chroot (ch_root))
+			error ("chroot(): %s", strerror (errno));
+		if (chdir("/"))
+			error ("chdir(\"/\"): %s", strerror (errno));
+	}
+	if (ch_dir) {
+		if (chdir (ch_dir))
+			error ("chdir(): %s", strerror (errno));
+	}
+	if (priority) {
+		errno = 0; /* see the nice(2) NOTES for why we do this */
+		if ((nice(priority) == -1) && (errno != 0))
+			error ("nice(): %s", strerror (errno));
+	}
 
 	execl (loginprog, loginprog, autologin? "-f" : "--", logname, NULL);
-	error ("%s: can't exec %s: %s", tty, loginprog, strerror (errno));
+	printf("%s: can't exec %s: %s", tty, loginprog, strerror (errno));
 	sleep (5);
 	exit (EXIT_FAILURE);
 }
