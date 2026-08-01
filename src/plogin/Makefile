@@ -6,4 +6,4 @@ clean:
 	rm -f login
 
 install:
-	cp login /usr/bin
+	cp login /usr/bin/login2
