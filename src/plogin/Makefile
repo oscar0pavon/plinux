@@ -1,9 +1,9 @@
 
 login: main.c
-	musl-gcc main.c -o login -static
+	musl-gcc main.c -o plogin -static
 
 clean:
-	rm -f login
+	rm -f plogin
 
 install:
-	cp login /usr/bin/login2
+	cp plogin /usr/bin/plogin

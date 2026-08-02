@@ -21,7 +21,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 
-#define LOGIN_PROGRAM "/usr/bin/login2"
+#define LOGIN_PROGRAM "/usr/bin/plogin"
 
 /* on which tty line are we sitting? (e.g. tty1) */
 static char *tty;
