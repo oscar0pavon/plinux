@@ -134,37 +134,12 @@ popd
 
 echo "Building login"
 
-pushd ${src_directory}/shadow
-
-# ./configure --sysconfdir=/etc   \
-# 						--disable-static \
-# 						--disable-shadowgrp \
-# 						--disable-silent-rules \
-# 						--disable-subordinate-ids \
-# 						--disable-man \
-# 						--disable-logind \
-#             --with-{b,yes}crypt \
-#             --without-libbsd    \
-#             --with-group-name-max-length=32 \
-# 						--without-libpam \
-# 						--without-bcrypt \
-# 						--without-yescrypt \
-# 						--without-nscd \
-# 						--without-sssd \
-# 						--without-sha-crypt \
-# 						--without-acl \
-# 						--without-attr \
-# 						--without-btrfs \
-# 						--without-audit &> /dev/null
-./configure --sysconfdir=/etc   \
-            --disable-static    \
-            --with-{b,yes}crypt \
-            --without-libbsd    \
-            --with-group-name-max-length=32
+pushd ${src_directory}/plogin
 
 make &> /dev/null
 
-make exec_prefix=${build_directory}/usr install &> /dev/null
+# pgetty execs LOGIN_PROGRAM "/usr/bin/login2"
+cp login ${build_directory}/usr/bin/login2
 
 popd
 

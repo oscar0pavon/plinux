@@ -1,3 +1,7 @@
+#!/bin/sh
+
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
+
 if [ ! -e disk.raw ];then
 dd if=/dev/zero of=disk.raw bs=1M count=1024
 fi

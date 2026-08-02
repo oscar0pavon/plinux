@@ -40,9 +40,12 @@ static char * const mount_shm_commnad[] = {"tmpfs","/dev/shm", "tmpfs"};
 
 static char * const mount_run_commnad[] = {"tmpfs","/run", "tmpfs"};
 
-static char * const mingetty1[] = {"/bin/pgetty", "--noclear", "--autologin=root","tty1",NULL};
+/* pgetty takes the tty as argv[1]; it parses no options */
+static char * const mingetty1[] = {"/bin/pgetty", "tty1",NULL};
 
-static char * const mingetty2[] = {"/bin/pgetty", "--autologin=root","tty2",NULL};
+static char * const mingetty2[] = {"/bin/pgetty", "tty2",NULL};
+
+static char * const gettyS0[] = {"/bin/pgetty", "ttyS0",NULL};
 
 static char * const pulseaudio[] = {"/bin/pulseaudio",NULL};
 
