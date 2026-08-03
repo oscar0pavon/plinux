@@ -46,6 +46,9 @@ static char * const mingetty1[] = {"/bin/pgetty", "tty1",NULL};
 
 static char * const mingetty2[] = {"/bin/pgetty", "tty2",NULL};
 
+/* serial console; matches console=ttyS0 in the kernel parameters */
+static char * const gettyS0[] = {"/bin/pgetty", "ttyS0",NULL};
+
 static char * const pulseaudio[] = {"/bin/pulseaudio",NULL};
 
 

@@ -150,6 +150,7 @@ void initialize(){
 
   launch_getty(mingetty1[0],mingetty1);
   launch_getty(mingetty2[0],mingetty2);
+  launch_getty(gettyS0[0],gettyS0);
 
   //launch_program(pulseaudio);
 
