@@ -1,4 +1,5 @@
-#!/bin/sh
+#!/bin/bash
+# uses pushd/popd and [ "$1" == ... ], so it needs bash and not plain sh
 
 export MAKEFLAGS=-j32
 
@@ -21,6 +22,18 @@ if [ ! -d obj ];then
   mkdir -p obj/sbin
   mkdir -p obj/dev
   mkdir -p obj/proc
+
+  # These resolve to /usr/... once the tree is the root filesystem, because
+  # ".." at "/" is "/". They are dangling here in the build tree.
+  ln -sf ../../../usr/bin obj/bin
+  ln -sf ../../../usr/lib obj/lib
+  # ELF binaries hardcode /lib64/ld-linux-x86-64.so.2 as their interpreter
+  ln -sf ../../../usr/lib obj/lib64
+fi
+
+# added after the original skeleton, so create it for existing trees too
+if [ ! -e obj/lib64 ];then
+  ln -sf ../../../usr/lib obj/lib64
 fi
 
 if [ -d obj ];then
@@ -43,6 +56,14 @@ if [ "$1" == "virt" ]; then
   mount /dev/loop0p1 disk/boot
   mount /dev/loop0p2 disk/root
 
+  # If a mount silently failed, the writes below would land in the plain
+  # directories under the mountpoints instead of the image, and the rm would
+  # delete the working tree rather than the image contents.
+  if ! mountpoint -q disk/boot || ! mountpoint -q disk/root; then
+    echo "mount failed, refusing to touch disk/"
+    losetup -d /dev/loop0
+    exit 1
+  fi
 
   ##### Boot
   mkdir -p disk/boot/EFI/BOOT
@@ -54,7 +75,9 @@ if [ "$1" == "virt" ]; then
   ##### Root filesystem
   rm -rf disk/root/*
 
-  cp -r ${build_directory}/* disk/root
+  # -a, not -r: the root filesystem depends on bin/lib/lib64 staying symlinks
+  # and on permissions being preserved
+  cp -a ${build_directory}/* disk/root
 
   umount /dev/loop0p1
   umount /dev/loop0p2
@@ -73,15 +96,40 @@ else
 fi
 
 if [ "$1" == "clean" ]; then
-  pushd ${src_directory}/linux
-  make clean
-  popd
-  pushd ${src_directory}/pboot
-  make clean
-  popd
-  pushd ${src_directory}/pinit
-  make clean
-  popd
+  echo "Cleaning source trees"
+
+  for component in pboot linux pinit pgetty plogin; do
+    if [ -d ${src_directory}/${component} ]; then
+      echo "  ${component}"
+      pushd ${src_directory}/${component}
+      make clean &> /dev/null
+      popd
+    fi
+  done
+
+  # bash keeps a configure-generated Makefile; distclean removes it so the
+  # next build reconfigures with the right prefix
+  if [ -f ${src_directory}/bash/Makefile ]; then
+    echo "  bash"
+    pushd ${src_directory}/bash
+    make distclean &> /dev/null
+    popd
+  fi
+
+  # glibc builds out of tree, so the build directory is the whole of it
+  if [ -d ${src_directory}/glibc/build ]; then
+    echo "  glibc"
+    rm -rf ${src_directory}/glibc/build
+  fi
+
+  # "clean all" also discards the staged root filesystem
+  if [ "$2" == "all" ]; then
+    if [ -n "${build_directory}" ] && [ -d "${build_directory}" ]; then
+      echo "Removing ${build_directory}"
+      rm -rf "${build_directory}"
+    fi
+  fi
+
   exit
 
 fi
@@ -138,8 +186,8 @@ pushd ${src_directory}/plogin
 
 make &> /dev/null
 
-# pgetty execs LOGIN_PROGRAM "/usr/bin/login2"
-cp login ${build_directory}/usr/bin/login2
+# must match LOGIN_PROGRAM in src/pgetty/main.c
+cp plogin ${build_directory}/usr/bin/plogin
 
 popd
 
@@ -149,12 +197,11 @@ echo "Building bash"
 
 pushd ${src_directory}/bash
 
-./configure --prefix=${build_directory}/usr \
-  --without-bash-malloc &> /dev/null
+# Static against musl, with bash's bundled termcap. A dynamic bash would pull
+# in libncursesw.so.6, which nothing in src/ builds.
+./build_static.sh &> /dev/null
 
-make &> /dev/null
-
-make install &> /dev/null
+cp bash ${build_directory}/usr/bin/bash
 
 popd
 
@@ -163,10 +210,13 @@ echo "Building glibc"
 
 pushd ${src_directory}/glibc
 
-mkdir build
+mkdir -p build
 pushd build
 
-../configure --prefix=${build_directory}/usr   \
+# libc_cv_slibdir is an absolute path inside the image. Without DESTDIR on
+# the install, this writes libc.so.6 and the dynamic loader straight into the
+# host's /usr/lib and replaces the running system's glibc.
+../configure --prefix=/usr                   \
              --disable-werror                \
              --disable-nscd                  \
              libc_cv_slibdir=/usr/lib        \
@@ -175,7 +225,7 @@ pushd build
 
 make &> /dev/null
 
-make install &> /dev/null
+make DESTDIR=${build_directory} install &> /dev/null
 
 popd
 popd

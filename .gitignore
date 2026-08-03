@@ -6,6 +6,7 @@ src/pgetty/pgetty
 src/pinit/pinit
 
 src/bash/*
+!src/bash/build_static.sh
 src/shadow/*
 
 virtual_machine/disk.raw

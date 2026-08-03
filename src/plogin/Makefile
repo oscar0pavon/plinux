@@ -1,5 +1,5 @@
 
-login: main.c
+plogin: main.c
 	musl-gcc main.c -o plogin -static
 
 clean:
