@@ -28,7 +28,6 @@ https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.xz
 https://ftpmirror.gnu.org/gperf/gperf-3.3.tar.gz
 https://ftpmirror.gnu.org/grep/grep-3.12.tar.xz
 https://ftpmirror.gnu.org/groff/groff-1.23.0.tar.gz
-https://ftpmirror.gnu.org/grub/grub-2.12.tar.xz
 https://ftpmirror.gnu.org/gzip/gzip-1.14.tar.xz
 https://github.com/Mic92/iana-etc/releases/download/20250807/iana-etc-20250807.tar.gz
 https://ftpmirror.gnu.org/inetutils/inetutils-2.6.tar.xz
@@ -38,7 +37,6 @@ https://pypi.org/packages/source/J/Jinja2/jinja2-3.1.6.tar.gz
 https://www.kernel.org/pub/linux/utils/kbd/kbd-2.8.0.tar.xz
 https://www.kernel.org/pub/linux/utils/kernel/kmod/kmod-34.2.tar.xz
 https://www.greenwoodsoftware.com/less/less-679.tar.gz
-https://www.linuxfromscratch.org/lfs/downloads/12.4/lfs-bootscripts-20250827.tar.xz
 https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.76.tar.xz
 https://github.com/libffi/libffi/releases/download/v3.5.2/libffi-3.5.2.tar.gz
 https://download.savannah.gnu.org/releases/libpipeline/libpipeline-1.5.8.tar.gz
@@ -72,7 +70,6 @@ https://github.com/shadow-maint/shadow/releases/download/4.18.0/shadow-4.18.0.ta
 https://github.com/troglobit/sysklogd/releases/download/v2.7.2/sysklogd-2.7.2.tar.gz
 https://github.com/systemd/systemd/archive/v257.8/systemd-257.8.tar.gz
 https://anduin.linuxfromscratch.org/LFS/systemd-man-pages-257.8.tar.xz
-https://github.com/slicer69/sysvinit/releases/download/3.14/sysvinit-3.14.tar.xz
 https://ftpmirror.gnu.org/tar/tar-1.35.tar.xz
 https://downloads.sourceforge.net/tcl/tcl8.6.16-src.tar.gz
 https://downloads.sourceforge.net/tcl/tcl8.6.16-html.tar.gz
@@ -92,4 +89,3 @@ https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-i18n-1.patch
 https://www.linuxfromscratch.org/patches/lfs/12.4/expect-5.45.4-gcc15-1.patch
 https://www.linuxfromscratch.org/patches/lfs/12.4/glibc-2.42-fhs-1.patch
 https://www.linuxfromscratch.org/patches/lfs/12.4/kbd-2.8.0-backspace-1.patch
-https://www.linuxfromscratch.org/patches/lfs/12.4/sysvinit-3.14-consolidated-1.patch

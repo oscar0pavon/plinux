@@ -131,9 +131,33 @@ efibootmgr --create --disk /dev/nvme0n1 --part 1 -L "pboot" \
   --loader '\EFI\pboot\pboot.efi'
 ```
 
+## Where this project departs from LFS
+
+plinux supplies its own bootloader, init, getty and login, so the corresponding
+book sections do not apply and their packages are not in `wget-list-sysv`:
+
+| Book section | LFS package | Replaced by |
+| --- | --- | --- |
+| 8.64. GRUB-2.12 | grub | [pboot](src/pboot) |
+| 10.4. Using GRUB to Set Up the Boot Process | grub | pboot, configured by `pboot.conf` |
+| 8.82. SysVinit-3.14 | sysvinit | [pinit](src/pinit) |
+| 9.2. LFS-Bootscripts-20250827 | lfs-bootscripts | pinit, which mounts and configures directly |
+
+Two packages stay because only one program in each is superseded:
+
+| Book section | Kept for | Superseded program |
+| --- | --- | --- |
+| 8.79. Util-linux-2.41.1 | blkid, mount, cfdisk, blockdev and the rest | `agetty`, replaced by [pgetty](src/pgetty) |
+| 8.28. Shadow-4.18.0 | passwd, su, the account database | `login`, replaced by [plogin](src/plogin) |
+
+Also note LFS builds inside a chroot and installs straight into `/usr`. This
+project stages into `obj/`, so book recipes need `DESTDIR` or an equivalent
+prefix before being run here.
+
 ## Downloading LFS sources
 
-`wget-list-sysv` holds the 95 package and patch URLs for LFS 12.4.
+`wget-list-sysv` holds the package and patch URLs for LFS 12.4, less the four
+entries listed above, so 91 of the book's 95.
 
 ```sh
 ./download.sh            # fetch everything missing into sources/
