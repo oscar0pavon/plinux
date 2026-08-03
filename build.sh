@@ -15,6 +15,55 @@ popd(){
   command popd "$@" > /dev/null
 }
 
+usage(){
+  cat <<'USAGE'
+Usage: ./build.sh [command]
+
+Builds plinux into obj/, which is the staged root filesystem.
+
+Commands:
+  (none)      Build everything: pboot, kernel, pinit, pgetty, plogin,
+              bash and glibc, installing each into obj/
+  virt        Copy obj/ and the bootloader into virtual_machine/disk.raw.
+              Builds nothing, so run a plain ./build.sh first if any
+              source changed
+  clean       Clean every source tree, bash's configure output and
+              glibc's out-of-tree build directory
+  clean all   As above, and delete obj/ entirely
+  tools       Accepted but does nothing; the cross toolchain section at
+              the end of this script is unreachable
+  help        This message
+
+Notes:
+  Run from the repository root. Paths come from $(pwd), not from the
+  location of this script.
+  virt needs root: it uses losetup and mount.
+  Components are built with MAKEFLAGS=-j32.
+
+Examples:
+  ./build.sh              # full build into obj/
+  ./build.sh virt         # push obj/ into the VM image
+  ./build.sh clean all    # start over
+USAGE
+}
+
+if [ "$1" == "help" ] || [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  usage
+  exit 0
+fi
+
+# Without this an unrecognised argument falls through to a full build, so a
+# typo like "./build.sh vrit" rebuilds everything instead of staging the image
+case "${1:-}" in
+  ""|virt|clean|tools) ;;
+  *)
+    echo "unknown command: $1" >&2
+    echo >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
 if [ ! -d obj ];then
   mkdir obj
   mkdir -p obj/usr/bin
