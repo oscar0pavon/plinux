@@ -2,8 +2,8 @@
 obj
 build/
 
-pgetty
-pinit
+src/pgetty/pgetty
+src/pinit/pinit
 
 src/bash/*
 src/shadow/*
