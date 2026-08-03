@@ -131,6 +131,35 @@ efibootmgr --create --disk /dev/nvme0n1 --part 1 -L "pboot" \
   --loader '\EFI\pboot\pboot.efi'
 ```
 
+## Reference
+
+The Linux From Scratch book is kept here for build procedures, as the original
+PDF and as text extracted with `pdftotext -layout` so it can be grepped:
+
+```
+LFS-BOOK-12.4.pdf         the book
+LFS-BOOK-12.4.txt         extracted text, 17371 lines
+LFS-BOOK-12.4-index.txt   section -> line number, 161 entries
+```
+
+Look a package up in the index, then read from that line:
+
+```sh
+grep -i udev LFS-BOOK-12.4-index.txt     # 9394  8.76. Udev from Systemd-257.8
+sed -n '9394,9530p' LFS-BOOK-12.4.txt
+```
+
+The `-layout` extraction keeps indentation and trailing backslashes, so the
+commands can be copied out directly. Regenerate both files with:
+
+```sh
+pdftotext -layout LFS-BOOK-12.4.pdf LFS-BOOK-12.4.txt
+```
+
+LFS installs straight into `/usr` because it builds inside a chroot. This
+project stages into `obj/` instead, so its recipes need a `DESTDIR` or an
+equivalent prefix before they are run here.
+
 ## Licensing
 
 pgetty derives from mingetty and is GPLv2; see `src/pgetty/COPYING`.

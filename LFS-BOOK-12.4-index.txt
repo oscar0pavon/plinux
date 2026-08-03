@@ -1,0 +1,161 @@
+800      1.1. How to Build an LFS System
+834      1.2. What's new since the last release
+905      1.3. Changelog
+1072     1.4. Resources
+1103     1.5. Help
+1197     2.1. Introduction
+1201     2.2. Host System Requirements
+1368     2.3. Building LFS in Stages
+1397     2.4. Creating a New Partition
+1494     2.5. Creating a File System on the Partition
+1532     2.6. Setting the $LFS Variable and the Umask
+1584     2.7. Mounting the New Partition
+1641     3.1. Introduction
+1694     3.2. All Packages
+2110     3.3. Needed Patches
+2149     4.1. Introduction
+2155     4.2. Creating a Limited Directory Layout in the LFS Filesystem
+2183     4.3. Adding the LFS User
+2231     4.4. Setting Up the Environment
+2350     4.5. About SBUs
+2387     4.6. About the Test Suites
+2752     5.1. Introduction
+2765     5.2. Binutils-2.45 - Pass 1
+2847     5.3. GCC-15.2.0 - Pass 1
+2980     5.4. Linux-6.16.1 API Headers
+3026     5.5. Glibc-2.42
+3205     5.6. Libstdc++ from GCC-15.2.0
+3268     6.1. Introduction
+3284     6.2. M4-1.4.20
+3309     6.3. Ncurses-6.5-20250809
+3394     6.4. Bash-5.3
+3427     6.5. Coreutils-9.7
+3465     6.6. Diffutils-3.12
+3500     6.7. File-5.46
+3542     6.8. Findutils-4.10.0
+3571     6.9. Gawk-5.3.2
+3599     6.10. Grep-3.12
+3624     6.11. Gzip-1.14
+3647     6.12. Make-4.4.1
+3673     6.13. Patch-2.8
+3699     6.14. Sed-4.9
+3724     6.15. Tar-1.35
+3751     6.16. Xz-5.8.1
+3783     6.17. Binutils-2.45 - Pass 2
+3834     6.18. GCC-15.2.0 - Pass 2
+3929     7.1. Introduction
+3940     7.2. Changing Ownership
+3956     7.3. Preparing Virtual Kernel File Systems
+4010     7.4. Entering the Chroot Environment
+4052     7.5. Creating Directories
+4108     7.6. Creating Essential Files and Symlinks
+4219     7.7. Gettext-0.26
+4247     7.8. Bison-3.8.2
+4274     7.9. Perl-5.42.0
+4319     7.10. Python-3.13.7
+4366     7.11. Texinfo-7.2
+4389     7.12. Util-linux-2.41.1
+4440     7.13. Cleaning up and Saving the Temporary System
+4548     8.1. Introduction
+4591     8.2. Package Management
+4784     8.3. Man-pages-6.15
+4815     8.4. Iana-Etc-20250807
+4839     8.5. Glibc-2.42
+5213     8.6. Zlib-1.3.1
+5247     8.7. Bzip2-1.0.8
+5325     8.8. Xz-5.8.1
+5394     8.9. Lz4-1.10.0
+5429     8.10. Zstd-1.5.7
+5471     8.11. File-5.46
+5505     8.12. Readline-8.3
+5564     8.13. M4-1.4.20
+5598     8.14. Bc-7.0.3
+5639     8.15. Flex-2.6.4
+5683     8.16. Tcl-8.6.16
+5775     8.17. Expect-5.45.4
+5839     8.18. DejaGNU-1.6.3
+5877     8.19. Pkgconf-2.5.1
+5917     8.20. Binutils-2.45
+6030     8.21. GMP-6.3.0
+6108     8.22. MPFR-4.2.2
+6149     8.23. MPC-1.3.1
+6186     8.24. Attr-2.5.2
+6226     8.25. Acl-2.3.2
+6266     8.26. Libcap-2.76
+6307     8.27. Libxcrypt-4.4.38
+6370     8.28. Shadow-4.18.0
+6545     8.29. GCC-15.2.0
+6799     8.30. Ncurses-6.5-20250809
+6922     8.31. Sed-4.9
+6958     8.32. Psmisc-23.7
+6995     8.33. Gettext-0.26
+7080     8.34. Bison-3.8.2
+7117     8.35. Grep-3.12
+7153     8.36. Bash-5.3
+7217     8.37. Libtool-2.5.4
+7256     8.38. GDBM-1.26
+7300     8.39. Gperf-3.3
+7332     8.40. Expat-2.7.1
+7371     8.41. Inetutils-2.6
+7447     8.42. Less-679
+7484     8.43. Perl-5.42.0
+7590     8.44. XML::Parser-2.47
+7621     8.45. Intltool-0.51.0
+7666     8.46. Autoconf-2.72
+7713     8.47. Automake-1.18.1
+7754     8.48. OpenSSL-3.5.2
+7825     8.49. Libelf from Elfutils-0.193
+7863     8.50. Libffi-3.5.2
+7911     8.51. Python-3.13.7
+8022     8.52. Flit-Core-3.12.0
+8059     8.53. Packaging-25.0
+8084     8.54. Wheel-0.46.1
+8111     8.55. Setuptools-80.9.0
+8135     8.56. Ninja-1.13.1
+8183     8.57. Meson-1.8.3
+8218     8.58. Kmod-34.2
+8265     8.59. Coreutils-9.7
+8484     8.60. Diffutils-3.12
+8518     8.61. Gawk-5.3.2
+8566     8.62. Findutils-4.10.0
+8610     8.63. Groff-1.23.0
+8720     8.64. GRUB-2.12
+8810     8.65. Gzip-1.14
+8855     8.66. IPRoute2-6.16.0
+8924     8.67. Kbd-2.8.0
+9015     8.68. Libpipeline-1.5.8
+9044     8.69. Make-4.4.1
+9078     8.70. Patch-2.8
+9111     8.71. Tar-1.35
+9153     8.72. Texinfo-7.2
+9222     8.73. Vim-9.1.1629
+9349     8.74. MarkupSafe-3.0.2
+9372     8.75. Jinja2-3.1.6
+9394     8.76. Udev from Systemd-257.8
+9532     8.77. Man-DB-2.13.1
+9644     8.78. Procps-ng-4.0.5
+9713     8.79. Util-linux-2.41.1
+9933     8.80. E2fsprogs-1.47.3
+10057    8.81. Sysklogd-2.7.2
+10111    8.82. SysVinit-3.14
+10153    8.83. About Debugging Symbols
+10168    8.84. Stripping
+10266    8.85. Cleaning Up
+10290    9.1. Introduction
+10333    9.2. LFS-Bootscripts-20250827
+10391    9.3. Overview of Device and Module Handling
+10536    9.4. Managing Devices
+10682    9.5. General Network Configuration
+10806    9.6. System V Bootscript Usage and Configuration
+11266    9.7. Configuring the System Locale
+11351    9.8. Creating the /etc/inputrc File
+11417    9.9. Creating the /etc/shells File
+11450    10.1. Introduction
+11454    10.2. Creating the /etc/fstab File
+11512    10.3. Linux-6.16.1
+11808    10.4. Using GRUB to Set Up the Boot Process
+11945    11.1. The End
+11978    11.2. Get Counted
+11984    11.3. Rebooting the System
+12028    11.4. Additional Resources
+12056    11.5. Getting Started After LFS
