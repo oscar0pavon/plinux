@@ -8,46 +8,41 @@ sigset_t set_of_signals;
 FILE* boot_time; 
 clock_t init_time; 
 
-void wait_signal_for_close(int pid){
-	  waitpid(pid, NULL, WNOHANG);
-    pthread_exit(0);
-}
+/* Run a command to completion. Used where the next step depends on this one
+   having finished; fork+exec is already concurrent, so everything else just
+   gets launched and left alone. */
+static void run_sync(char* const command[]){
+  pid_t pid = fork();
 
-void setup_loopback() {
-  int pid;
-  int signal;
-  if ((pid = fork())) {
-    while (1) {
-      sigwait(&set_of_signals, &signal);
-      if (signal == SIGCHLD) {
-        waitpid(pid, NULL, WNOHANG);
-
-        if (fork() == 0) {
-          sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
-          setsid();
-          execvp(ip_lo_up[0], ip_lo_up);
-        }
-
-        break;
-      }
-    }
-  } else {
+  if(pid == 0){
     sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
-    setsid();
-    execvp(ip_addr_lo_command[0], ip_addr_lo_command);
+    execvp(command[0], command);
+    _exit(127);
   }
+
+  if(pid > 0)
+    waitpid(pid, NULL, 0);
 }
 
-void* execute_thread_command(void*command_line){
-  char* const* command = (char* const *)(command_line);
-  int pid; 
-  if((pid = fork())){
-    wait_signal_for_close(pid);
-  }else{
-		setsid();
-		execvp(*command,command_line);
-  } 
-  return NULL;
+/* The ip commands are ordered: the address has to exist before the route and
+   the link that use it. The whole sequence runs in one child so PID 1 never
+   blocks waiting for the network. */
+static void network_setup(void){
+  if(fork() != 0)
+    return;
+
+  sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
+  setsid();
+
+  run_sync(ip_addr_lo_command);
+  run_sync(ip_lo_up);
+
+  run_sync(ip_set_up_command);
+  run_sync(wpa_command);            /* -B, daemonises itself */
+  run_sync(ip_addr_command);
+  run_sync(ip_route_command);
+
+  _exit(0);
 }
 
 static void launch_program(char* const command[]){
@@ -95,30 +90,21 @@ void* mount_threaded(void*command_line){
   return NULL;
 }
 
-
-
-void* set_ip(void*){
-
-  int signal;
-  int pid; 
-  if((pid = fork())){
-    
-    while(1){
-      sigwait(&set_of_signals,&signal);
-      if(signal == SIGCHLD){
-	      waitpid(pid, NULL, WNOHANG);
-        pthread_t thread;
-        pthread_create(&thread, NULL , execute_thread_command, ip_route_command) ;
-
-        break;
-      }
-    }
-  }else{
-		sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
-		setsid();
-		execvp(ip_addr_command[0],ip_addr_command);
-  }  
+static void mount_now(char* const command[], unsigned long int mode){
+  mount(command[0], command[1], command[2], mode, NULL);
 }
+
+/* Only block devices are worth a thread: their superblock read and journal
+   recovery run outside namespace_sem, so they genuinely overlap (~6ms each).
+   Pseudo-filesystems cost ~12us and serialise on that lock anyway.
+   These are static so they outlive initialize()'s frame. */
+static struct MountCommand block_mounts[] = {
+  {.arguments = mount_boot_commnad,  .mode = 0},
+  {.arguments = mount_disk_commnad,  .mode = 0},
+  {.arguments = mount_disk2_commnad, .mode = 0},
+};
+
+#define BLOCK_MOUNT_COUNT (sizeof(block_mounts)/sizeof(block_mounts[0]))
 
 
 static void signal_reap(void)
@@ -130,94 +116,45 @@ static void signal_reap(void)
 
 void initialize(){
 
-  pthread_t mount_thread;
-  pthread_t mount_dev_thread;
+  pthread_t block_thread[BLOCK_MOUNT_COUNT];
 
-  struct MountCommand mount_run_struct = {.arguments = mount_run_commnad, 
-                                          .mode = 0}; 
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_run_struct);
+  /* The kernel already mounted devtmpfs on /dev (CONFIG_DEVTMPFS_MOUNT=y), so
+     the device nodes are here. Start the slow mounts first, then do everything
+     else while their I/O is in flight. */
+  for(size_t i = 0; i < BLOCK_MOUNT_COUNT; i++)
+    pthread_create(&block_thread[i], NULL, mount_threaded, &block_mounts[i]);
 
-  
-  struct MountCommand mount_dev_struct; 
-  mount_dev_struct.arguments = mount_dev_commnad;
-  mount_dev_struct.mode = MS_NOSUID;
+  mount_now(mount_proc_commnad, MS_NOSUID | MS_NOEXEC | MS_NODEV);
+  mount_now(mount_sys_commnad,  MS_NOSUID | MS_NOEXEC | MS_NODEV);
+  mount_now(mount_dev_commnad,  MS_NOSUID);
+  mount_now(mount_run_commnad,  0);
 
-  pthread_create(&mount_dev_thread, NULL , mount_threaded, &mount_dev_struct);
-  
-  struct MountCommand mount_proc_struct = {.arguments = mount_proc_commnad, 
-                                          .mode = MS_NOSUID | MS_NOEXEC | MS_NODEV}; 
-  
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_proc_struct);
-  
-  struct MountCommand mount_sys_struct = {.arguments = mount_sys_commnad, 
-                                          .mode = MS_NOSUID | MS_NOEXEC | MS_NODEV}; 
+  mount_now(mount_efivars_commnad, 0);          /* needs /sys */
 
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_sys_struct);
+  mkdir("/dev/pts", S_IRWXU | S_IRWXG | S_IRWXO);
+  mkdir("/dev/shm", S_IRWXU | S_IRWXG | S_IRWXO);
 
-
-  pthread_join(mount_dev_thread,NULL);
-  
-  struct MountCommand mount_efi_struct = {.arguments = mount_efivars_commnad, 
-                                          .mode = 0}; 
-
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_efi_struct);
-
-  struct MountCommand mount_boot_struct = {.arguments = mount_boot_commnad, 
-                                          .mode = 0}; 
-
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_boot_struct);
-
-  struct MountCommand mount_disk_struct = {.arguments = mount_disk_commnad, 
-                                          .mode = 0}; 
-
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_disk_struct);
-
-
-  struct MountCommand mount_disk2_struct = {.arguments = mount_disk2_commnad, 
-                                          .mode = 0}; 
-
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_disk2_struct);
-  //launch_program(udev_script);
+  mount_now(mount_pts_commnad, 0);
+  mount_now(mount_shm_commnad, MS_NOSUID | MS_NODEV);
 
   symlink("/proc/self/fd/0","/dev/stdin");
   symlink("/proc/self/fd/1","/dev/stdout");
   symlink("/proc/self/fd/2","/dev/stderr");
   symlink("/proc/self/fd","/dev/fd");
 
+  //launch_program(udev_script);
 
- 
-  mkdir("/dev/pts", S_IRWXU | S_IRWXG | S_IRWXO);
-  mkdir("/dev/shm", S_IRWXU | S_IRWXG | S_IRWXO);
-  
-
-  struct MountCommand mount_pts_struct = {.arguments = mount_pts_commnad, 
-                                          .mode = 0}; 
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_pts_struct);
-
-  struct MountCommand mount_shm_struct = {.arguments = mount_shm_commnad, 
-                                         .mode = MS_NOSUID | MS_NODEV}; 
-  
-  pthread_create(&mount_thread, NULL , mount_threaded, &mount_shm_struct);
-
-
-
-  //wifi
-  pthread_t ip_add_thread;
-  pthread_create(&mount_thread, NULL , execute_thread_command, ip_set_up_command) ;
-  pthread_create(&mount_thread, NULL , execute_thread_command, wpa_command) ;
-  
-  
-  set_ip(NULL);
-
-  setup_loopback();
+  network_setup();
 
   //swapon("/dev/nvme0n1p4", SWAP_FLAG_DISCARD);
 
   launch_getty(mingetty1[0],mingetty1);
   launch_getty(mingetty2[0],mingetty2);
-  launch_getty(gettyS0[0],gettyS0);
 
-  //pthread_create(&mount_thread, NULL , execute_thread_command, pulseaudio);
+  //launch_program(pulseaudio);
+
+  for(size_t i = 0; i < BLOCK_MOUNT_COUNT; i++)
+    pthread_join(block_thread[i], NULL);
 
   //timing..
   init_time = clock() - init_time;
@@ -231,6 +168,11 @@ void initialize(){
 void reboot_system(){
   sync();
   reboot(LINUX_REBOOT_CMD_RESTART);
+}
+
+void poweroff_system(){
+  sync();
+  reboot(LINUX_REBOOT_CMD_POWER_OFF);
 }
 
 int main(){
@@ -265,8 +207,11 @@ int main(){
     }
     if(signal == SIGINT){
       printf("reboot!!!!!!\n");
-      system("pkill X");
       reboot_system();
+    }
+    if(signal == SIGUSR2){
+      printf("poweroff!!!!!!\n");
+      poweroff_system();
     }
     
   }

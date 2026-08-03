@@ -19,6 +19,7 @@
 #include <stdbool.h>
 
 #define	LINUX_REBOOT_CMD_RESTART	0x01234567
+#define	LINUX_REBOOT_CMD_POWER_OFF	0x4321FEDC
 
 int symlink(const char *target, const char *linkpath);
 //wifi
@@ -44,8 +45,6 @@ static char * const mount_run_commnad[] = {"tmpfs","/run", "tmpfs"};
 static char * const mingetty1[] = {"/bin/pgetty", "tty1",NULL};
 
 static char * const mingetty2[] = {"/bin/pgetty", "tty2",NULL};
-
-static char * const gettyS0[] = {"/bin/pgetty", "ttyS0",NULL};
 
 static char * const pulseaudio[] = {"/bin/pulseaudio",NULL};
 
