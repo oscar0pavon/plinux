@@ -1,0 +1,18 @@
+#!/bin/sh
+
+/sbin/udevd --daemon &> /dev/null
+
+# Now traverse /sys in order to "coldplug" devices that have
+# already been discovered
+/bin/udevadm trigger --action=add    --type=subsystems
+/bin/udevadm trigger --action=add    --type=devices
+/bin/udevadm trigger --action=change --type=devices
+
+
+
+#seatd &
+
+
+
+
+

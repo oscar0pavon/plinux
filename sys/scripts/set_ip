@@ -1,0 +1,8 @@
+#!/bin/bash
+
+/usr/libexec/iwd &
+sleep 1
+INTERFACE=wlan0
+ip link set $INTERFACE up
+ip addr add 192.168.100.23/24 dev $INTERFACE 
+ip route add default via 192.168.100.1 src 192.168.100.23 dev $INTERFACE 

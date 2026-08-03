@@ -1,0 +1,23 @@
+#!/bin/sh
+	
+export XDG_RUNTIME_DIR=/tmp/00-runtime-dir
+
+pdevices
+seatd &
+
+mkdir -p /run/dbus
+
+dbus-daemon --system
+
+set_ip 1&> /dev/null &
+
+swapon /dev/nvme1n1p7
+mount /dev/nvme1n1p1 /data
+mount /dev/nvme1n1p8 /data3
+mount /dev/nvme1n1p9 /data2
+mount /dev/nvme1n1p10 /data4
+
+#server &
+
+#SHELL=/usr/bin/zsh dbus-run-session sway
+dbus-run-session sway
