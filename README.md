@@ -131,6 +131,28 @@ efibootmgr --create --disk /dev/nvme0n1 --part 1 -L "pboot" \
   --loader '\EFI\pboot\pboot.efi'
 ```
 
+## Downloading LFS sources
+
+`wget-list-sysv` holds the 95 package and patch URLs for LFS 12.4.
+
+```sh
+./download.sh            # fetch everything missing into sources/
+./download.sh retry      # only the entries that failed last time
+./download.sh verify     # md5sum -c, if md5sums is present
+./download.sh help
+```
+
+Each file is fetched separately so a bad mirror is named rather than lost in
+the noise. Complete files are skipped, partial ones resumed, and failures are
+recorded in `sources/.failed` for `retry`. The exit status is 0 only when every
+file was obtained, so it can gate a build script.
+
+`md5sums` is not in this repository. Fetch it from the same release of the book
+as `wget-list-sysv` and put it beside the script to enable `verify`.
+
+The list includes `systemd-257.8.tar.gz`, `systemd-man-pages-257.8.tar.xz` and
+`udev-lfs-20230818.tar.xz`, which are what the book's udev section needs.
+
 ## Reference
 
 The Linux From Scratch book is kept here for build procedures, as the original
