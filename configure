@@ -1,5 +1,129 @@
 #!/bin/bash
+#
+# Fetch the component repositories that are developed outside this tree.
+# Safe to re-run: anything already cloned is left alone.
 
-git clone --depth=1 https://github.com/oscar0pavon/pboot ./src/pboot
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
+# url and destination, one pair per line
+repos=(
+  "https://github.com/oscar0pavon/pboot src/pboot"
+)
 
+usage(){
+  cat <<'USAGE'
+Usage: ./configure [command]
+
+Clones the component repositories listed in this script into src/.
+
+Commands:
+  (none)      Clone anything missing; existing clones are left untouched
+  update      Pull into the clones that are already present
+  help        This message
+
+Exit status is 0 only when every repository is in place.
+USAGE
+}
+
+# Is dir a git working tree in its own right? A plain "-d dir/.git" test would
+# miss worktrees and submodules, where .git is a file rather than a directory.
+is_clone(){
+  git -C "$1" rev-parse --git-dir > /dev/null 2>&1
+}
+
+clone_repo(){
+  local url=$1 dir=$2
+
+  if [ -e "${dir}" ]; then
+    if is_clone "${dir}"; then
+      echo "have   ${dir} ($(git -C "${dir}" rev-parse --short HEAD 2>/dev/null))"
+      return 0
+    fi
+
+    # A non-empty directory that is not a clone is somebody's work, not
+    # something to overwrite. git clone would refuse anyway; say why.
+    if [ -n "$(ls -A "${dir}" 2>/dev/null)" ]; then
+      echo "  ${dir} exists and is not a git clone, leaving it alone" >&2
+      return 1
+    fi
+
+    rmdir "${dir}" 2>/dev/null
+  fi
+
+  echo "clone  ${dir}"
+  if ! git clone --depth=1 "${url}" "${dir}"; then
+    echo "  failed to clone ${url}" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+update_repo(){
+  local dir=$2
+
+  if ! is_clone "${dir}"; then
+    echo "skip   ${dir} (not a clone)"
+    return 0
+  fi
+
+  echo "pull   ${dir}"
+  if ! git -C "${dir}" pull --ff-only; then
+    echo "  failed to update ${dir}" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# captured before the loop below, which reuses the positional parameters to
+# split each repos entry
+command=${1:-}
+
+case "${command}" in
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+  ''|update)
+    ;;
+  *)
+    echo "unknown command: ${command}" >&2
+    echo >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+if ! command -v git > /dev/null; then
+  echo "git is required" >&2
+  exit 1
+fi
+
+failed=0
+
+for entry in "${repos[@]}"; do
+  # shellcheck disable=SC2086 # the pair is deliberately word-split
+  set -- ${entry}
+
+  if [ "${1:-}" == "" ] || [ "${2:-}" == "" ]; then
+    echo "malformed repos entry: ${entry}" >&2
+    failed=$((failed + 1))
+    continue
+  fi
+
+  if [ "${command:-}" == "update" ]; then
+    update_repo "$1" "$2" || failed=$((failed + 1))
+  else
+    clone_repo "$1" "$2" || failed=$((failed + 1))
+  fi
+done
+
+if [ "${failed}" -ne 0 ]; then
+  echo
+  echo "${failed} repository/repositories not in place" >&2
+  exit 1
+fi
+
+echo
+echo "all repositories in place"

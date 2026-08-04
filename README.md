@@ -37,11 +37,16 @@ virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 ## Building
 
 ```sh
+./configure           # clone the component repos kept outside this tree
 ./build.sh help       # all commands
 ./build.sh            # full build into obj/
 ./build.sh virt       # copy obj/ into virtual_machine/disk.raw
 ./build.sh clean all  # clean sources and delete obj/
 ```
+
+`./configure` is safe to re-run: repositories already cloned are reported and
+skipped, and a directory that exists but is not a clone is left alone rather
+than overwritten. `./configure update` pulls into the existing clones.
 
 `virt` builds nothing, so run a plain `./build.sh` first if any source changed.
 It needs root for `losetup` and `mount`.
