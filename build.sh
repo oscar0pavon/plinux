@@ -98,23 +98,44 @@ fi
 
 if [ "$1" == "virt" ]; then
   echo "Virtual Machine"
-  
-  umount /dev/loop0p1
-  umount /dev/loop0p2
 
   pushd virtual_machine
 
-  losetup -P /dev/loop0 disk.raw
-  
-  mount /dev/loop0p1 disk/boot
-  mount /dev/loop0p2 disk/root
+  if [ ! -e disk.raw ]; then
+    echo "disk.raw does not exist; create it with ./configure.sh" >&2
+    exit 1
+  fi
+
+  mkdir -p disk/boot disk/root
+
+  # A free device rather than a hardcoded /dev/loop0, which fails with "Device
+  # or resource busy" whenever anything else holds it. This also drops the two
+  # unconditional umounts that used to run first and always complained about
+  # having no mount point.
+  loop=$(losetup -f --show -P disk.raw)
+  if [ -z "${loop}" ]; then
+    echo "cannot attach disk.raw to a loop device" >&2
+    exit 1
+  fi
+
+  # Partition nodes are created asynchronously, so they are not there the
+  # instant losetup returns
+  for _ in $(seq 50); do
+    [ -e "${loop}p1" ] && [ -e "${loop}p2" ] && break
+    sleep 0.1
+  done
+
+  mount "${loop}p1" disk/boot
+  mount "${loop}p2" disk/root
 
   # If a mount silently failed, the writes below would land in the plain
   # directories under the mountpoints instead of the image, and the rm would
   # delete the working tree rather than the image contents.
   if ! mountpoint -q disk/boot || ! mountpoint -q disk/root; then
-    echo "mount failed, refusing to touch disk/"
-    losetup -d /dev/loop0
+    echo "mount failed, refusing to touch disk/" >&2
+    umount disk/boot 2>/dev/null
+    umount disk/root 2>/dev/null
+    losetup -d "${loop}"
     exit 1
   fi
 
@@ -132,12 +153,14 @@ if [ "$1" == "virt" ]; then
   # and on permissions being preserved
   cp -a ${build_directory}/* disk/root
 
-  umount /dev/loop0p1
-  umount /dev/loop0p2
+  umount disk/boot
+  umount disk/root
 
-  losetup -d /dev/loop0
+  losetup -d "${loop}"
 
   popd
+
+  echo "disk.raw updated"
 
   exit
 fi
