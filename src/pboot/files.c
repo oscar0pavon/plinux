@@ -1,7 +1,7 @@
 #include "files.h"
 #include "efi.h"
 #include "utils.h"
-
+#include "memory.h"
 #include "pboot.h"
 
 static FileProtocol* root_directory;
@@ -43,11 +43,17 @@ uint64_t get_file_size(FileProtocol* file){
 void* read_file(FileProtocol* file){
 	void* memory;
   uint64_t file_size = get_file_size(file);
-  allocate_memory(file_size , &memory);
+  // Allocate one extra byte so the buffer can be null-terminated.
+  // allocate_pool does not zero memory, and callers like the config
+  // parser scan with while(*p); without a terminator they run off the
+  // end of the file into uninitialized pool memory.
+  allocate_memory(file_size + 1, &memory);
 
   read_file_to_memory(file, file_size, memory);
 
-	return memory;	
+  ((unsigned char*)memory)[file_size] = '\0';
+
+	return memory;
 }
 
 void open_file(FileProtocol** file, uint16_t* name){
@@ -68,6 +74,15 @@ void open_file(FileProtocol** file, uint16_t* name){
 	}
 }
 
+void close_file(FileProtocol* file){
+
+  Status status = file->close(file);
+
+  if (status != EFI_SUCCESS) {
+    log(u"Can't close file");
+    hang();
+  }
+}
 
 void setup_file_system(){
 

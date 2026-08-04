@@ -1,37 +1,35 @@
 CFLAGS := -ffreestanding -fno-stack-check -fno-stack-protector 
-CFLAGS += -fPIC -fshort-wchar -mno-red-zone -maccumulate-outgoing-args -mabi=ms
+CFLAGS += -fPIC -fshort-wchar -mno-red-zone 
+CFLAGS += -maccumulate-outgoing-args -mabi=ms
 
 LDFLAGS := -nostdlib -znocombreloc -shared -Bsymbolic
 
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:c=o)
-OBJS := $(filter-out start.o, $(OBJS))
 
-all: pboot
+all: pboot.efi
 
 %.o : %.c
 	@echo "Compiling $@"
 	$(CC) $(CFLAGS) -c $<
 
-start.o: start.c
-	$(CC) $(CFLAGS) -c start.c
+pboot.bin: $(OBJS)
+	ld $(OBJS) $(LDFLAGS) -o pboot.bin -T binary.ld 
 
-pboot.bin: start.o $(OBJS)
-	ld start.o $(OBJS) $(LDFLAGS) -o pboot.bin -T binary.ld 
-
-pboot: efi.s pboot.bin
+pboot.efi: pboot.bin efi.s
 	@echo "Creating pboot using fasm"
-	./tools/fasm efi.s pboot
-	chmod +x pboot
-	@echo "You have pboot"
+	./tools/fasm efi.s pboot.efi
+	chmod +x pboot.efi
+	@echo "You have pboot.efi"
 
 
 clean:
 	rm -f *.o
-	rm -f pboot
+	rm -f pboot.efi
 	rm -f pboot.bin
 
 install:
-	cp pboot /boot/EFI/pboot/pboot.efi
+	cp pboot.efi /boot/pboot.efi
+	@echo "Installed on /boot/pboot.efi"
 
 $(LOG).SILENT:

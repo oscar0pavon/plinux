@@ -16,4 +16,9 @@ void boot();
 
 void set_default_entry(uint8_t entry);
 
-void main(Handle, SystemTable*);//you can have warning about named main()
+void load_kernel_file();
+
+FileProtocol* get_kernel_file();
+
+//you can have warning about named main()
+void main(Handle, SystemTable*);
