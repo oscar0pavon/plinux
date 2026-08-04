@@ -32,6 +32,9 @@ Commands:
   virt        Copy obj/ and the bootloader into virtual_machine/disk.raw.
               Builds nothing, so run a plain ./build.sh first if any
               source changed
+  packages    Build the LFS packages listed in packages/order into obj/.
+              Already-installed ones are skipped; "packages force"
+              rebuilds them anyway
   clean       Clean every source tree, bash's configure output and
               glibc's out-of-tree build directory
   clean all   As above, and delete obj/ entirely
@@ -59,7 +62,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|clean|tools) ;;
+  ""|virt|clean|tools|packages) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -67,6 +70,29 @@ case "${1:-}" in
     exit 1
     ;;
 esac
+
+log_directory=${working_directory}/logs
+mkdir -p "${log_directory}"
+
+failed=0
+skipped=0
+
+# Output goes to a log rather than /dev/null, and only the tail is shown when
+# something breaks. Discarding it meant a failed build was reported as nothing
+# more than the "cp" that came after it.
+run(){
+  local name=$1
+  shift
+
+  if "$@" > "${log_directory}/${name}.log" 2>&1; then
+    return 0
+  fi
+
+  echo "  FAILED: $*" >&2
+  echo "  last lines of ${log_directory}/${name}.log:" >&2
+  sed 's/^/    /' <<< "$(tail -15 "${log_directory}/${name}.log")" >&2
+  return 1
+}
 
 if [ ! -d obj ];then
   mkdir obj
@@ -94,6 +120,53 @@ if [ -d obj ];then
   musl_directory=${build_directory}
 
   target=$(uname -m)-plinux-gnu
+fi
+
+if [ "$1" == "packages" ]; then
+  echo "Building packages"
+
+  # A package that installed successfully leaves a stamp, so a rerun picks up
+  # where it stopped instead of rebuilding everything. "packages force"
+  # ignores them.
+  stamp_directory=${log_directory}/stamps
+  mkdir -p "${stamp_directory}"
+
+  while read -r package; do
+    case "${package}" in ''|\#*) continue ;; esac
+
+    script=${working_directory}/packages/${package}.sh
+
+    if [ ! -x "${script}" ]; then
+      echo "  ${package}: no ${script}" >&2
+      failed=$((failed + 1))
+      continue
+    fi
+
+    if [ -f "${stamp_directory}/${package}" ] && [ "$2" != "force" ]; then
+      echo "  have ${package}"
+      continue
+    fi
+
+    echo "  ${package}"
+
+    if run "package-${package}" "${script}"; then
+      touch "${stamp_directory}/${package}"
+    else
+      failed=$((failed + 1))
+      # later packages link against earlier ones, so carrying on would only
+      # produce a second, more confusing failure
+      break
+    fi
+  done < "${working_directory}/packages/order"
+
+  echo
+  if [ "${failed}" -ne 0 ]; then
+    echo "${failed} package(s) failed; logs are in ${log_directory}" >&2
+    exit 1
+  fi
+
+  echo "packages installed into ${build_directory}"
+  exit
 fi
 
 if [ "$1" == "virt" ]; then
@@ -211,29 +284,6 @@ if [ "$1" == "clean" ]; then
 fi
 
 ################## Build ###################
-
-log_directory=${working_directory}/logs
-mkdir -p "${log_directory}"
-
-failed=0
-skipped=0
-
-# Output goes to a log rather than /dev/null, and only the tail is shown when
-# something breaks. Discarding it meant a failed build was reported as nothing
-# more than the "cp" that came after it.
-run(){
-  local name=$1
-  shift
-
-  if "$@" > "${log_directory}/${name}.log" 2>&1; then
-    return 0
-  fi
-
-  echo "  FAILED: $*" >&2
-  echo "  last lines of ${log_directory}/${name}.log:" >&2
-  sed 's/^/    /' <<< "$(tail -15 "${log_directory}/${name}.log")" >&2
-  return 1
-}
 
 stage(){
   if [ ! -f "$1" ]; then

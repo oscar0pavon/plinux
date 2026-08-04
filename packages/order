@@ -1,0 +1,19 @@
+# Build order for the core system. One package per line, blank lines and
+# comments ignored. ./build.sh packages walks this from the top.
+#
+# Order is dependency order, not preference: musl has to exist before
+# anything can link against it.
+
+musl
+coreutils
+
+# still to come, roughly in this order:
+#
+#   util-linux    mount, blkid, dmesg, losetup, fdisk
+#   grep sed gawk findutils diffutils
+#   tar gzip xz
+#   iproute2      pinit already execs /sbin/ip and nothing provides it
+#   zlib ncurses
+#   e2fsprogs     fsck and mke2fs for the ext4 root
+#   udev          LFS 8.76, from the systemd tarball
+#   procps-ng psmisc

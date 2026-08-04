@@ -17,8 +17,10 @@ src/plogin/plogin
 src/pboot/
 src/linux/
 
-# fetched by ./download.sh from wget-list-sysv
+# fetched by ./download.sh from wget-list-sysv, unpacked into src/ by the
+# scripts in packages/
 sources/
+src/coreutils-*/
 src/systemd-257.8/
 src/systemd-257.8.tar.gz
 logs/
