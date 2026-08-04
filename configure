@@ -8,7 +8,18 @@ cd "$(dirname "$(readlink -f "$0")")" || exit 1
 # url and destination, one pair per line
 repos=(
   "https://github.com/oscar0pavon/pboot src/pboot"
+  "https://github.com/torvalds/linux src/linux"
 )
+
+# every clone and every update stays shallow; the kernel's full history is
+# several gigabytes and none of it is needed to build
+depth=1
+
+# The kernel is an external clone, so its configuration cannot live inside the
+# tree: a re-clone or a shallow pull would take it with them. It is kept here
+# and copied in instead.
+kernel_config=sys/kernel_config
+kernel_tree=src/linux
 
 usage(){
   cat <<'USAGE'
@@ -21,7 +32,10 @@ Commands:
   update      Pull into the clones that are already present
   help        This message
 
-Exit status is 0 only when every repository is in place.
+Clones and pulls are shallow. Afterwards sys/kernel_config is copied to
+src/linux/.config, unless a .config is already there.
+
+Exit status is 0 only when every step succeeded.
 USAGE
 }
 
@@ -51,8 +65,34 @@ clone_repo(){
   fi
 
   echo "clone  ${dir}"
-  if ! git clone --depth=1 "${url}" "${dir}"; then
+  if ! git clone --depth="${depth}" "${url}" "${dir}"; then
     echo "  failed to clone ${url}" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+install_kernel_config(){
+  if [ ! -d "${kernel_tree}" ]; then
+    return 0
+  fi
+
+  if [ ! -f "${kernel_config}" ]; then
+    echo "  ${kernel_config} is missing" >&2
+    return 1
+  fi
+
+  # An existing .config is the user's current state, possibly edited with
+  # menuconfig. Replacing it would silently discard that work.
+  if [ -f "${kernel_tree}/.config" ]; then
+    echo "have   ${kernel_tree}/.config"
+    return 0
+  fi
+
+  echo "config ${kernel_tree}/.config from ${kernel_config}"
+  if ! cp "${kernel_config}" "${kernel_tree}/.config"; then
+    echo "  failed to install ${kernel_config}" >&2
     return 1
   fi
 
@@ -68,7 +108,11 @@ update_repo(){
   fi
 
   echo "pull   ${dir}"
-  if ! git -C "${dir}" pull --ff-only; then
+
+  # --depth keeps the clone shallow; without it a pull backfills the history
+  # the shallow clone was made to avoid. --ff-only so local work is never
+  # discarded: a pull that cannot fast-forward is reported, not forced.
+  if ! git -C "${dir}" pull --ff-only --depth="${depth}"; then
     echo "  failed to update ${dir}" >&2
     return 1
   fi
@@ -119,9 +163,11 @@ for entry in "${repos[@]}"; do
   fi
 done
 
+install_kernel_config || failed=$((failed + 1))
+
 if [ "${failed}" -ne 0 ]; then
   echo
-  echo "${failed} repository/repositories not in place" >&2
+  echo "${failed} step(s) did not complete" >&2
   exit 1
 fi
 

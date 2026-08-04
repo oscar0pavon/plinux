@@ -13,6 +13,10 @@ virtual_machine/disk.raw
 virtual_machine/disk
 src/plogin/plogin
 
+# cloned by ./configure
+src/pboot/
+src/linux/
+
 # fetched by ./download.sh from wget-list-sysv
 sources/
 src/systemd-257.8/

@@ -197,7 +197,16 @@ pushd ${src_directory}/linux
 
 echo "Building kernel"
 
-make pavon_defconfig &> /dev/null
+# ./configure normally puts this in place; do it here too so a build works on
+# a tree that was cloned by hand
+if [ ! -f .config ]; then
+  cp ${working_directory}/sys/kernel_config .config
+fi
+
+# The config was saved from 6.14.6 and the clone tracks mainline, so it will be
+# missing symbols the current kernel has added. olddefconfig takes the default
+# for each of them instead of prompting and stalling the build.
+make olddefconfig &> /dev/null
 
 make &> /dev/null
 

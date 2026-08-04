@@ -18,7 +18,7 @@ Third-party sources live in `src/` alongside them:
 
 | Source | Version | Notes |
 | --- | --- | --- |
-| linux | 6.14.6 | built with `pavon_defconfig` |
+| linux | mainline | cloned by `./configure`, configured from `sys/kernel_config` |
 | bash | 5.3 | static against musl, with bash's bundled termcap |
 | musl | 1.2.5 | libc for every `p*` component and bash |
 | glibc | 2.41 | staged into the image for dynamically linked binaries |
@@ -31,6 +31,7 @@ run                   symlink to virtual_machine/start.sh
 obj/                  staged root filesystem; becomes / in the image
 src/                  component sources and third-party trees
 sys/                  scripts and dotfiles for a running system
+sys/kernel_config     the kernel .config, kept outside the cloned kernel tree
 virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 ```
 
@@ -46,7 +47,16 @@ virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 
 `./configure` is safe to re-run: repositories already cloned are reported and
 skipped, and a directory that exists but is not a clone is left alone rather
-than overwritten. `./configure update` pulls into the existing clones.
+than overwritten. `./configure update` pulls into the existing clones. Both
+clone and pull are shallow, since the kernel's full history is several
+gigabytes and none of it is needed to build.
+
+It then copies `sys/kernel_config` to `src/linux/.config`, leaving an existing
+`.config` alone so work done with `menuconfig` is not thrown away. The kernel
+is an external clone, so its configuration cannot live inside it — a re-clone
+or a shallow pull would take it along. `build.sh` runs `make olddefconfig`
+before building, which takes the default for any symbol the current kernel has
+added since the config was saved instead of prompting.
 
 `virt` builds nothing, so run a plain `./build.sh` first if any source changed.
 It needs root for `losetup` and `mount`.
