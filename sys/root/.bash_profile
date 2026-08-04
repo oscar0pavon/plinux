@@ -5,13 +5,25 @@ if [[ -f ~/.bashrc ]]; then
 	. ~/.bashrc
 fi
 
-if [ "${XDG_RUNTIME_DIR}" ]; then
-	if [ -d "${XDG_RUNTIME_DIR}" ]; then
-		mkdir "${XDG_RUNTIME_DIR}"
-		chmod 0700 "${XDG_RUNTIME_DIR}"
-	fi
+# Wayland requires this to exist and be private before anything starts. It
+# used to be set in init_os, which runs after this block, so the outer test
+# never passed and the directory was never created here. On this workstation
+# /tmp lives on the root filesystem, so a directory made once has survived
+# every reboot and hidden that; a tmpfs /tmp, or a fresh image, has nothing.
+# :- keeps a value set by a real session manager if one ever sets it.
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/00-runtime-dir}
+
+# -m sets the mode as it is created, so no separate chmod is needed. This is
+# a root-only system, so the mode guards nothing; it is kept because some
+# wayland clients complain about a world-accessible runtime directory.
+# mkdir is coreutils, which a minimal image does not have yet. Skipping
+# quietly is right: nothing that needs this directory can run there either.
+if command -v mkdir > /dev/null; then
+	mkdir -p -m 0700 "${XDG_RUNTIME_DIR}"
 fi
 
-if [[ -z $DISPLAY ]] && [[ $(tty) = /dev/tty1 ]]; then
+# tty is coreutils too; without it this stays quiet and simply does not
+# autostart, which is what you want on a system that has no compositor
+if [[ -z $DISPLAY ]] && [[ $(tty 2>/dev/null) = /dev/tty1 ]]; then
  init_os
 fi

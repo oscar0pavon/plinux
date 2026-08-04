@@ -368,6 +368,24 @@ if have_source "Building glibc" ${src_directory}/glibc; then
 fi
 
 
+echo "Installing system configuration"
+
+mkdir -p ${build_directory}/root
+
+# plogin sets HOME=/root and chdir()s there, so without these the login shell
+# falls back to bash's default prompt and none of this configuration loads.
+cp ${working_directory}/sys/root/.bash_profile ${build_directory}/root/
+cp ${working_directory}/sys/root/.bashrc       ${build_directory}/root/
+
+# .bashrc looks for the repo copy first and this one second; on the target
+# there is no /root/plinux, so this is the one that gets sourced
+cp ${working_directory}/sys/root/shell_config.sh ${build_directory}/root/
+
+# on the workstation these are reached through /root/plinux/sys/scripts on
+# PATH, which does not exist on the target
+cp ${working_directory}/sys/scripts/* ${build_directory}/usr/bin/
+
+
 echo
 if [ "${skipped}" -ne 0 ]; then
   echo "${skipped} component(s) skipped for missing sources"

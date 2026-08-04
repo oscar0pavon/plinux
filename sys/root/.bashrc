@@ -15,5 +15,15 @@ work_space="\w"
 export PS1="\r${color_name}${user}:${directory_color}${work_space}${white_color}$\]"
 
 
-source /root/plinux/sys/root/shell_config.sh
+# On the workstation this file is a symlink into the repo and the first path
+# exists. In the installed image there is no /root/plinux, so build.sh puts
+# shell_config.sh next to this file instead. First one found wins.
+for shell_config in /root/plinux/sys/root/shell_config.sh \
+                    "${HOME:-/root}/shell_config.sh"; do
+	if [ -f "${shell_config}" ]; then
+		source "${shell_config}"
+		break
+	fi
+done
+unset shell_config
 

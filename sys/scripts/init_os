@@ -1,6 +1,13 @@
 #!/bin/sh
 	
-export XDG_RUNTIME_DIR=/tmp/00-runtime-dir
+# .bash_profile already sets and creates this when init_os is started from a
+# tty1 login. Repeated here so running init_os by hand works too; both are
+# idempotent and agree on the value.
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/00-runtime-dir}
+
+if command -v mkdir > /dev/null; then
+	mkdir -p -m 0700 "${XDG_RUNTIME_DIR}"
+fi
 
 pdevices
 seatd &
