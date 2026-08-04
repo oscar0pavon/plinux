@@ -22,6 +22,8 @@ src/linux/
 sources/
 src/coreutils-*/
 src/glibc-*/
-src/systemd-257.8/
+src/kmod-*/
+src/util-linux-*/
+src/systemd-*/
 src/systemd-257.8.tar.gz
 logs/
