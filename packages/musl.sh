@@ -21,7 +21,15 @@ cd "${src_directory}/musl"
 # loader over the one the running system uses. In the image that same symlink
 # resolves to /usr/lib, so binaries asking for /lib/ld-musl-x86_64.so.1 still
 # find it.
-CC=gcc ./configure --prefix=/usr --syslibdir=/usr/lib
+#
+# --libdir keeps musl's own files out of /usr/lib. musl installs its loader
+# as $libdir/libc.so, and glibc installs a linker script at exactly that
+# path, so with both in /usr/lib whichever is built second destroys the
+# other's loader. Under /usr/lib/musl they never share a filename, and
+# $syslibdir/ld-musl-x86_64.so.1 still points at the real thing.
+CC=gcc ./configure --prefix=/usr \
+                   --libdir=/usr/lib/musl \
+                   --syslibdir=/usr/lib
 
 make
 

@@ -43,6 +43,19 @@ Exit status is 0 only when every file was obtained.
 USAGE
 }
 
+# ftpmirror.gnu.org redirects to whichever mirror is nearest, and that
+# redirect is not always reachable. ftp.gnu.org is the canonical host and
+# carries everything; the path gains a /gnu component. 29 of the URLs in
+# wget-list-sysv go through ftpmirror, so this is worth trying before
+# calling a download failed.
+fallback_url(){
+  case "$1" in
+    https://ftpmirror.gnu.org/*)
+      echo "https://ftp.gnu.org/gnu/${1#https://ftpmirror.gnu.org/}"
+      ;;
+  esac
+}
+
 verify(){
   if [ ! -f "${sums}" ]; then
     echo "no ${sums} present, skipping verification" >&2
@@ -87,12 +100,21 @@ download(){
 
     printf '[%3d/%3d] get  %s\n' "${n}" "${total}" "${name}"
 
-    if wget --continue \
-            --tries="${tries}" \
-            --timeout="${timeout}" \
-            --quiet --show-progress \
-            --directory-prefix="${sources}" \
-            "${url}"; then
+    fetch(){
+      wget --continue \
+           --tries="${tries}" \
+           --timeout="${timeout}" \
+           --quiet --show-progress \
+           --directory-prefix="${sources}" \
+           "$1"
+    }
+
+    alternate=$(fallback_url "${url}")
+
+    if fetch "${url}"; then
+      ok=$((ok + 1))
+    elif [ -n "${alternate}" ] && printf '  retrying via %s\n' "${alternate}" \
+         && fetch "${alternate}"; then
       ok=$((ok + 1))
     else
       echo "  FAILED ${url}" >&2
