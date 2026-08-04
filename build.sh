@@ -3,6 +3,11 @@
 
 export MAKEFLAGS=-j32
 
+# Resolve to the repository root rather than the caller's directory, so the
+# script works from anywhere. Taking $(pwd) meant running it as
+# ../build.sh from virtual_machine/ looked for virtual_machine/obj.
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
+
 working_directory=$(pwd)
 src_directory=${working_directory}/src
 build_directory=${working_directory}/obj
@@ -35,8 +40,7 @@ Commands:
   help        This message
 
 Notes:
-  Run from the repository root. Paths come from $(pwd), not from the
-  location of this script.
+  Can be run from any directory; paths resolve relative to the script.
   virt needs root: it uses losetup and mount.
   Components are built with MAKEFLAGS=-j32.
 
