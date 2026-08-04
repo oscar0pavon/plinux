@@ -21,6 +21,7 @@ src/linux/
 # scripts in packages/
 sources/
 src/coreutils-*/
+src/glibc-*/
 src/systemd-257.8/
 src/systemd-257.8.tar.gz
 logs/
