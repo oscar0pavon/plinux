@@ -35,6 +35,8 @@ Commands:
   packages    Build the LFS packages listed in packages/order into obj/.
               Already-installed ones are skipped; "packages force"
               rebuilds them anyway
+  verbose     Not a command: add it to any of the above, or set VERBOSE=1,
+              to stream build output instead of only logging it
   clean       Clean every source tree, bash's configure output and
               glibc's out-of-tree build directory
   clean all   As above, and delete obj/ entirely
@@ -62,7 +64,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|clean|tools|packages) ;;
+  ""|virt|clean|tools|packages|verbose) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -70,6 +72,15 @@ case "${1:-}" in
     exit 1
     ;;
 esac
+
+# "verbose" may appear as any argument, so it combines with force and all
+verbose=${VERBOSE:-}
+
+for argument in "$@"; do
+  if [ "${argument}" == "verbose" ]; then
+    verbose=1
+  fi
+done
 
 log_directory=${working_directory}/logs
 mkdir -p "${log_directory}"
@@ -84,13 +95,31 @@ run(){
   local name=$1
   shift
 
-  if "$@" > "${log_directory}/${name}.log" 2>&1; then
+  local status
+
+  if [ -n "${verbose}" ]; then
+    # tee so the log is still written for later. The status has to come from
+    # PIPESTATUS: in a pipeline $? is tee's, which succeeds even when the
+    # build it is printing has failed.
+    "$@" 2>&1 | tee "${log_directory}/${name}.log"
+    status=${PIPESTATUS[0]}
+  else
+    "$@" > "${log_directory}/${name}.log" 2>&1
+    status=$?
+  fi
+
+  if [ "${status}" -eq 0 ]; then
     return 0
   fi
 
   echo "  FAILED: $*" >&2
-  echo "  last lines of ${log_directory}/${name}.log:" >&2
-  sed 's/^/    /' <<< "$(tail -15 "${log_directory}/${name}.log")" >&2
+
+  # in verbose mode the output has already gone past
+  if [ -z "${verbose}" ]; then
+    echo "  last lines of ${log_directory}/${name}.log:" >&2
+    sed 's/^/    /' <<< "$(tail -15 "${log_directory}/${name}.log")" >&2
+  fi
+
   return 1
 }
 
@@ -128,7 +157,13 @@ if [ "$1" == "packages" ]; then
   # A package that installed successfully leaves a stamp, so a rerun picks up
   # where it stopped instead of rebuilding everything. "packages force"
   # ignores them.
-  stamp_directory=${log_directory}/stamps
+  #
+  # The stamps live inside obj because that is what they are a statement
+  # about: this package is installed in *this* tree. Keeping them under logs/
+  # meant "clean all" removed obj and left the stamps behind, so every package
+  # reported "have" while the tree stayed empty. The leading dot keeps them
+  # out of the "cp -a obj/*" that populates the image.
+  stamp_directory=${build_directory}/.packages
   mkdir -p "${stamp_directory}"
 
   while read -r package; do

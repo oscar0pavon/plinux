@@ -12,12 +12,14 @@ glibc
 musl
 coreutils
 
+# udev's dependencies, then udev. All three are glibc programs: libblkid and
+# libkmod are linked into udev, so they have to agree on the C library.
+util-linux
+kmod
+udev
+
 # still to come, roughly in this order:
 #
-#   util-linux    mount, blkid, dmesg, losetup, fdisk. udev wants libblkid
-#                 from it for the persistent storage rules
-#   kmod          libkmod, so udev can load modules on device events
-#   udev          LFS 8.76, from the systemd tarball
 #   grep sed gawk findutils diffutils
 #   tar gzip xz
 #   iproute2      pinit already execs /sbin/ip and nothing provides it
