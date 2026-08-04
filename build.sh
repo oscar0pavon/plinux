@@ -371,6 +371,14 @@ fi
 echo "Installing system configuration"
 
 mkdir -p ${build_directory}/root
+mkdir -p ${build_directory}/etc
+
+# Without a user database getpwuid(0) fails, so bash's \u in the prompt shows
+# "I have no name!". Nothing here authenticates yet: plogin execs the shell
+# directly, and the x defers to an /etc/shadow that does not exist, which
+# means no password is valid rather than that none is needed.
+cp ${working_directory}/sys/etc/passwd ${build_directory}/etc/
+cp ${working_directory}/sys/etc/group  ${build_directory}/etc/
 
 # plogin sets HOME=/root and chdir()s there, so without these the login shell
 # falls back to bash's default prompt and none of this configuration loads.
