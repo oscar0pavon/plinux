@@ -185,109 +185,171 @@ fi
 
 ################## Build ###################
 
-pushd ${src_directory}/pboot
-echo "Building bootloader"
-make &> /dev/null
+log_directory=${working_directory}/logs
+mkdir -p "${log_directory}"
 
-cp pboot ${build_directory}/pboot
+failed=0
+skipped=0
 
-popd
+# Output goes to a log rather than /dev/null, and only the tail is shown when
+# something breaks. Discarding it meant a failed build was reported as nothing
+# more than the "cp" that came after it.
+run(){
+  local name=$1
+  shift
 
-pushd ${src_directory}/linux
+  if "$@" > "${log_directory}/${name}.log" 2>&1; then
+    return 0
+  fi
 
-echo "Building kernel"
+  echo "  FAILED: $*" >&2
+  echo "  last lines of ${log_directory}/${name}.log:" >&2
+  sed 's/^/    /' <<< "$(tail -15 "${log_directory}/${name}.log")" >&2
+  return 1
+}
 
-# ./configure normally puts this in place; do it here too so a build works on
-# a tree that was cloned by hand
-if [ ! -f .config ]; then
-  cp ${working_directory}/sys/kernel_config .config
+stage(){
+  if [ ! -f "$1" ]; then
+    echo "  FAILED: $1 was not produced" >&2
+    return 1
+  fi
+
+  if ! cp "$1" "$2"; then
+    echo "  FAILED: cannot copy $1 to $2" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# Sources come and go as components move to their own repositories, so a
+# missing tree is reported and skipped instead of aborting the whole build.
+have_source(){
+  echo "$1"
+
+  if [ ! -d "$2" ]; then
+    echo "  skipping, $2 is not present" >&2
+    skipped=$((skipped + 1))
+    return 1
+  fi
+
+  return 0
+}
+
+if have_source "Building bootloader" ${src_directory}/pboot; then
+  pushd ${src_directory}/pboot
+  # the Makefile's target is pboot.efi; pboot alone is the raw pboot.bin stage
+  if run pboot make; then
+    stage pboot.efi ${build_directory}/pboot || failed=$((failed + 1))
+  else
+    failed=$((failed + 1))
+  fi
+  popd
 fi
 
-# The config was saved from 6.14.6 and the clone tracks mainline, so it will be
-# missing symbols the current kernel has added. olddefconfig takes the default
-# for each of them instead of prompting and stalling the build.
-make olddefconfig &> /dev/null
+if have_source "Building kernel" ${src_directory}/linux; then
+  pushd ${src_directory}/linux
 
-make &> /dev/null
+  # ./configure normally puts this in place; do it here too so a build works on
+  # a tree that was cloned by hand
+  if [ ! -f .config ]; then
+    cp ${working_directory}/sys/kernel_config .config
+  fi
 
-cp arch/x86_64/boot/bzImage ${build_directory}/vmlinuz
+  # The config was saved from 6.14.6 and the clone tracks mainline, so it will
+  # be missing symbols the current kernel has added. olddefconfig takes the
+  # default for each of them instead of prompting and stalling the build.
+  if run kernel-config make olddefconfig && run kernel make; then
+    # x86_64 was merged into arch/x86 in 2.6.24; arch/x86_64 has not existed
+    # for a very long time
+    stage arch/x86/boot/bzImage ${build_directory}/vmlinuz || failed=$((failed + 1))
+  else
+    failed=$((failed + 1))
+  fi
 
-popd
+  popd
+fi
+
+if have_source "Building init PID 1" ${src_directory}/pinit; then
+  pushd ${src_directory}/pinit
+  if run pinit make; then
+    stage pinit ${build_directory}/pinit || failed=$((failed + 1))
+  else
+    failed=$((failed + 1))
+  fi
+  popd
+fi
+
+if have_source "Building getty" ${src_directory}/pgetty; then
+  pushd ${src_directory}/pgetty
+  if run pgetty make; then
+    stage pgetty ${build_directory}/usr/bin/pgetty || failed=$((failed + 1))
+  else
+    failed=$((failed + 1))
+  fi
+  popd
+fi
+
+if have_source "Building login" ${src_directory}/plogin; then
+  pushd ${src_directory}/plogin
+  if run plogin make; then
+    # must match LOGIN_PROGRAM in src/pgetty/main.c
+    stage plogin ${build_directory}/usr/bin/plogin || failed=$((failed + 1))
+  else
+    failed=$((failed + 1))
+  fi
+  popd
+fi
+
+if have_source "Building bash" ${src_directory}/bash; then
+  pushd ${src_directory}/bash
+  # Static against musl, with bash's bundled termcap. A dynamic bash would pull
+  # in libncursesw.so.6, which nothing in src/ builds.
+  if run bash ./build_static.sh; then
+    stage bash ${build_directory}/usr/bin/bash || failed=$((failed + 1))
+  else
+    failed=$((failed + 1))
+  fi
+  popd
+fi
 
 
-echo "Building init PID 1"
+if have_source "Building glibc" ${src_directory}/glibc; then
+  pushd ${src_directory}/glibc
 
-pushd ${src_directory}/pinit
+  mkdir -p build
+  pushd build
 
-make &> /dev/null
+  # libc_cv_slibdir is an absolute path inside the image. Without DESTDIR on
+  # the install, this writes libc.so.6 and the dynamic loader straight into the
+  # host's /usr/lib and replaces the running system's glibc.
+  if run glibc-configure ../configure --prefix=/usr \
+             --disable-werror                       \
+             --disable-nscd                         \
+             libc_cv_slibdir=/usr/lib               \
+             --enable-stack-protector=strong        \
+             --enable-kernel=5.4                    \
+     && run glibc make                              \
+     && run glibc-install make DESTDIR=${build_directory} install; then
+    :
+  else
+    failed=$((failed + 1))
+  fi
 
-cp pinit ${build_directory}/pinit
-
-popd
-
-
-echo "Building getty"
-
-pushd ${src_directory}/pgetty
-
-make &> /dev/null
-
-cp pgetty ${build_directory}/usr/bin
-
-popd
-
-
-
-echo "Building login"
-
-pushd ${src_directory}/plogin
-
-make &> /dev/null
-
-# must match LOGIN_PROGRAM in src/pgetty/main.c
-cp plogin ${build_directory}/usr/bin/plogin
-
-popd
+  popd
+  popd
+fi
 
 
+echo
+if [ "${skipped}" -ne 0 ]; then
+  echo "${skipped} component(s) skipped for missing sources"
+fi
 
-echo "Building bash"
-
-pushd ${src_directory}/bash
-
-# Static against musl, with bash's bundled termcap. A dynamic bash would pull
-# in libncursesw.so.6, which nothing in src/ builds.
-./build_static.sh &> /dev/null
-
-cp bash ${build_directory}/usr/bin/bash
-
-popd
-
-
-echo "Building glibc"
-
-pushd ${src_directory}/glibc
-
-mkdir -p build
-pushd build
-
-# libc_cv_slibdir is an absolute path inside the image. Without DESTDIR on
-# the install, this writes libc.so.6 and the dynamic loader straight into the
-# host's /usr/lib and replaces the running system's glibc.
-../configure --prefix=/usr                   \
-             --disable-werror                \
-             --disable-nscd                  \
-             libc_cv_slibdir=/usr/lib        \
-             --enable-stack-protector=strong \
-             --enable-kernel=5.4 &> /dev/null
-
-make &> /dev/null
-
-make DESTDIR=${build_directory} install &> /dev/null
-
-popd
-popd
-
+if [ "${failed}" -ne 0 ]; then
+  echo "${failed} component(s) failed; logs are in ${log_directory}" >&2
+  exit 1
+fi
 
 echo "SUCCESS you have plinux"
 exit

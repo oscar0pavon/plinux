@@ -51,6 +51,18 @@ clone_repo(){
   if [ -e "${dir}" ]; then
     if is_clone "${dir}"; then
       echo "have   ${dir} ($(git -C "${dir}" rev-parse --short HEAD 2>/dev/null))"
+
+      # An interrupted clone leaves the objects fetched but the working tree
+      # unpopulated, which surfaces much later as missing source files. The
+      # files are already local, so this restores them without the network.
+      if [ -n "$(git -C "${dir}" status --porcelain 2>/dev/null | head -1)" ]; then
+        echo "       working tree is incomplete, checking it out again"
+        if ! git -C "${dir}" checkout -f HEAD > /dev/null 2>&1; then
+          echo "  failed to restore ${dir}" >&2
+          return 1
+        fi
+      fi
+
       return 0
     fi
 
