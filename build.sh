@@ -35,9 +35,15 @@ Commands:
               Builds nothing, so run a plain ./build.sh first if any
               source changed
   packages    Build the LFS packages listed in packages/order into obj/.
-              Already-installed ones are skipped; "packages force"
-              rebuilds them anyway. On a terminal the package being built
-              is shown on a line pinned to the top of the screen
+              Already-installed ones are skipped. On a terminal the package
+              being built is shown on a line pinned to the top of the screen
+
+                packages <name>   rebuild just that one, skipped or not
+                packages force    rebuild every one of them
+
+              "Installed" means a stamp in obj/.packages, so "clean all"
+              makes the next run build everything again. Cleaning the
+              source trees does not: they unpack again when needed
   quiet       Not a command: add it to any of the above, or set VERBOSE=0,
               to only log build output instead of streaming it. Output is
               streamed by default; "verbose" is accepted and is the default
@@ -237,9 +243,22 @@ if [ "$1" == "packages" ]; then
   stamp_directory=${build_directory}/.packages
   mkdir -p "${stamp_directory}"
 
+  # The second argument selects what to rebuild: "force" for everything, a
+  # package name for just that one. verbose and quiet are not names, they are
+  # the output setting handled above.
+  package_force=
+  package_only=
+
+  case "${2:-}" in
+    ''|verbose|quiet) ;;
+    force)            package_force=1 ;;
+    *)                package_only=$2 ;;
+  esac
+
   package_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
                     "${working_directory}/packages/order")
   package_number=0
+  package_matched=
 
   status_start
   status_set "starting"
@@ -249,6 +268,14 @@ if [ "$1" == "packages" ]; then
 
     package_number=$((package_number + 1))
 
+    # naming one package builds only it, whatever its stamp says
+    if [ -n "${package_only}" ]; then
+      if [ "${package}" != "${package_only}" ]; then
+        continue
+      fi
+      package_matched=1
+    fi
+
     script=${working_directory}/packages/${package}.sh
 
     if [ ! -x "${script}" ]; then
@@ -257,7 +284,8 @@ if [ "$1" == "packages" ]; then
       continue
     fi
 
-    if [ -f "${stamp_directory}/${package}" ] && [ "$2" != "force" ]; then
+    if [ -f "${stamp_directory}/${package}" ] &&
+       [ -z "${package_force}" ] && [ -z "${package_only}" ]; then
       echo "  have ${package}"
       continue
     fi
@@ -279,6 +307,14 @@ if [ "$1" == "packages" ]; then
   status_stop
 
   echo
+
+  # a name that is in no order file is a typo, not a request to build nothing
+  if [ -n "${package_only}" ] && [ -z "${package_matched}" ]; then
+    echo "no such package: ${package_only}" >&2
+    echo "packages are listed in ${working_directory}/packages/order" >&2
+    exit 1
+  fi
+
   if [ "${failed}" -ne 0 ]; then
     echo "${failed} package(s) failed; logs are in ${log_directory}" >&2
     exit 1
