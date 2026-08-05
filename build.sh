@@ -11,6 +11,7 @@ cd "$(dirname "$(readlink -f "$0")")" || exit 1
 working_directory=$(pwd)
 src_directory=${working_directory}/src
 build_directory=${working_directory}/obj
+sources_directory=${working_directory}/sources
 
 pushd(){
   command pushd "$@" > /dev/null
@@ -40,8 +41,9 @@ Commands:
   quiet       Not a command: add it to any of the above, or set VERBOSE=0,
               to only log build output instead of streaming it. Output is
               streamed by default; "verbose" is accepted and is the default
-  clean       Clean every source tree, bash's configure output and the
-              out-of-tree build directories
+  clean       Clean the cloned source trees and bash's configure output,
+              and delete the unpacked package trees, which unpack again
+              from sources/ on the next build
   clean all   As above, and delete obj/ entirely
   tools       Accepted but does nothing; the cross toolchain section at
               the end of this script is unreachable
@@ -382,15 +384,38 @@ if [ "$1" == "clean" ]; then
     popd
   fi
 
-  # glibc and dbus build out of tree, so the build directory is the whole of
-  # their output. These are unpacked tarballs rather than clones, so a full
-  # reset is "rm -rf" on the directory itself; this only undoes the build.
-  for out_of_tree in ${src_directory}/glibc-*/build ${src_directory}/dbus-*/build; do
-    if [ -d "${out_of_tree}" ]; then
-      echo "  ${out_of_tree#${src_directory}/}"
-      rm -rf "${out_of_tree}"
+  # The package trees are unpacked tarballs, not clones, so they are removed
+  # rather than "make clean"ed: the tarball is the source of truth and the
+  # unpacked directory is itself a build artifact. This also drops any patches
+  # applied in place, which "make clean" would leave behind.
+  #
+  # Only directories that can be recreated are removed. A versioned name with
+  # no matching tarball in sources/ is left alone, so nothing unrecoverable
+  # goes: re-extracting it would be impossible without downloading again.
+  #
+  # Installed packages are not affected. Their stamps live in obj and say the
+  # package is installed in *that* tree, which is still true; "clean all"
+  # removes obj and takes the stamps with it.
+  removed=0
+
+  for tree in ${src_directory}/*-[0-9]*/; do
+    [ -d "${tree}" ] || continue
+
+    name=$(basename "${tree}")
+
+    if ! ls "${sources_directory}/${name}".tar.* > /dev/null 2>&1; then
+      echo "  keeping ${name}, no tarball to unpack it from again"
+      continue
     fi
+
+    echo "  ${name}"
+    rm -rf "${tree}"
+    removed=$((removed + 1))
   done
+
+  if [ "${removed}" -ne 0 ]; then
+    echo "removed ${removed} package tree(s); they unpack again on the next build"
+  fi
 
   # "clean all" also discards the staged root filesystem
   if [ "$2" == "all" ]; then
