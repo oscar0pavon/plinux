@@ -36,8 +36,9 @@ Commands:
               Already-installed ones are skipped; "packages force"
               rebuilds them anyway. On a terminal the package being built
               is shown on a line pinned to the top of the screen
-  verbose     Not a command: add it to any of the above, or set VERBOSE=1,
-              to stream build output instead of only logging it
+  quiet       Not a command: add it to any of the above, or set VERBOSE=0,
+              to only log build output instead of streaming it. Output is
+              streamed by default; "verbose" is accepted and is the default
   clean       Clean every source tree, bash's configure output and
               glibc's out-of-tree build directory
   clean all   As above, and delete obj/ entirely
@@ -65,7 +66,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|clean|tools|packages|verbose) ;;
+  ""|virt|clean|tools|packages|verbose|quiet) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -74,13 +75,23 @@ case "${1:-}" in
     ;;
 esac
 
-# "verbose" may appear as any argument, so it combines with force and all
-verbose=${VERBOSE:-}
+# Build output is streamed by default. It still goes to logs/ either way, but
+# watching a compile happen is worth more than a clean screen, and a build that
+# has silently stalled is otherwise indistinguishable from one that is working.
+#
+# "quiet" turns it off, and either word may appear as any argument, so both
+# combine with force and all. VERBOSE=0 in the environment also silences it.
+verbose=1
+
+if [ "${VERBOSE:-1}" == "0" ]; then
+  verbose=
+fi
 
 for argument in "$@"; do
-  if [ "${argument}" == "verbose" ]; then
-    verbose=1
-  fi
+  case "${argument}" in
+    verbose) verbose=1 ;;
+    quiet)   verbose=  ;;
+  esac
 done
 
 log_directory=${working_directory}/logs
@@ -249,13 +260,13 @@ if [ "$1" == "packages" ]; then
     fi
 
     echo "  ${package}"
-    status_set "[${package_number}/${package_total}] building ${package}"
+    status_set "${package}   [${package_number}/${package_total}]"
 
     if run "package-${package}" "${script}"; then
       touch "${stamp_directory}/${package}"
     else
       failed=$((failed + 1))
-      status_set "[${package_number}/${package_total}] FAILED ${package}"
+      status_set "${package}   [${package_number}/${package_total}]   FAILED"
       # later packages link against earlier ones, so carrying on would only
       # produce a second, more confusing failure
       break

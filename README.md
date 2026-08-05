@@ -57,9 +57,8 @@ virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 ./build.sh clean all  # clean sources and delete obj/
 ```
 
-Add `verbose` to any command, or set `VERBOSE=1`, to stream build output as
-well as logging it. Without it each step prints one line and the detail goes to
-`logs/`.
+Build output is streamed as well as written to `logs/`. Add `quiet` to any
+command, or set `VERBOSE=0`, to only log it and print one line per step.
 
 `./configure` is safe to re-run: repositories already cloned are reported and
 skipped, and a directory that exists but is not a clone is left alone rather
@@ -100,7 +99,7 @@ order and `./build.sh packages` walks it from the top.
 ```sh
 ./build.sh packages          # build whatever is not installed yet
 ./build.sh packages force    # rebuild them all
-./build.sh packages verbose  # stream the output
+./build.sh packages quiet    # log the output instead of streaming it
 ```
 
 Each script sources `packages/common.sh`, which unpacks the tarball from
