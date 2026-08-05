@@ -47,6 +47,9 @@ Commands:
   quiet       Not a command: add it to any of the above, or set VERBOSE=0,
               to only log build output instead of streaming it. Output is
               streamed by default; "verbose" is accepted and is the default
+  check       Report installed binaries whose shared libraries are missing
+              from obj/. Those programs build and install cleanly but fail
+              at startup, so nothing else notices. Exits non-zero if any
   clean       Clean the cloned source trees and bash's configure output,
               and delete the unpacked package trees, which unpack again
               from sources/ on the next build
@@ -75,7 +78,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|clean|tools|packages|verbose|quiet) ;;
+  ""|virt|clean|tools|packages|check|verbose|quiet) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -226,6 +229,50 @@ if [ -d obj ];then
   musl_directory=${build_directory}
 
   target=$(uname -m)-plinux-gnu
+fi
+
+# Every shared library an installed binary names has to be in the image too.
+# Getting this wrong is silent: the package builds against the host's copy,
+# installs cleanly, and the program only fails when someone runs it. That is
+# how kmod shipped unable to start, and how dmesg and lsblk went unnoticed.
+if [ "$1" == "check" ]; then
+  echo "Checking installed binaries against the image's libraries"
+
+  unresolved=0
+  checked=0
+
+  for binary in ${build_directory}/usr/bin/* ${build_directory}/usr/sbin/* \
+                ${build_directory}/usr/lib/*.so*; do
+    [ -f "${binary}" ] || continue
+
+    # skips scripts, symlinks and the static ones, which have no NEEDED
+    readelf -d "${binary}" > /dev/null 2>&1 || continue
+
+    checked=$((checked + 1))
+
+    for library in $(readelf -d "${binary}" 2>/dev/null |
+                     sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+      # the loader itself is named by absolute path and lives in /usr/lib
+      case "${library}" in ld-*) continue ;; esac
+
+      if [ ! -e "${build_directory}/usr/lib/${library}" ]; then
+        echo "  ${binary#${build_directory}} needs ${library}"
+        unresolved=$((unresolved + 1))
+      fi
+    done
+  done
+
+  echo
+  echo "checked ${checked} binaries"
+
+  if [ "${unresolved}" -ne 0 ]; then
+    echo "${unresolved} unresolved dependencies" >&2
+    echo "each of those programs fails at startup in the image" >&2
+    exit 1
+  fi
+
+  echo "every dependency resolves inside the image"
+  exit
 fi
 
 if [ "$1" == "packages" ]; then

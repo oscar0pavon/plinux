@@ -40,6 +40,13 @@ openssl
 kmod
 udev
 
+# Libraries util-linux was already linked against but that nothing staged, so
+# the programs needing them could not start. Found with "./build.sh check".
+# ncurses first: readline links libncursesw rather than a separate termcap.
+ncurses
+readline
+libxcrypt
+
 # the message bus, and the XML parser it reads its configuration with.
 # Not LFS packages: the book builds no D-Bus, it only creates the messagebus
 # user. iwd will not start without a system bus, and seatd and sway want one.
