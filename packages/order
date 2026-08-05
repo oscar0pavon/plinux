@@ -19,6 +19,14 @@ grep
 gawk
 findutils
 
+# The compression libraries kmod reads modules with. Without all three,
+# kmod -- and modprobe, depmod and insmod, which are symlinks to it -- cannot
+# start at all: they name libz, liblzma and libzstd as hard dependencies
+# whether or not a given module is compressed.
+zlib
+xz
+zstd
+
 # udev's dependencies, then udev. All of these are glibc programs: their
 # libraries are linked into udev, so they have to agree on the C library.
 #
