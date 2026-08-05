@@ -14,6 +14,26 @@ export MAKEFLAGS=${MAKEFLAGS:--j32}
 # building a C library with itself is circular.
 export CC=${CC:-musl-gcc}
 
+# Built for the machine that builds them. This is a personal system, so the
+# image only ever runs on this i9-14900K or in the VM, and the VM is started
+# with -cpu host so its ISA is the same one.
+#
+# PLINUX_MARCH overrides it; PLINUX_MARCH=none builds generic x86-64 instead,
+# which is what to use if the image has to run anywhere else. Note that
+# changing this does not rebuild anything by itself: the already-built
+# packages keep their stamps, so follow it with "./build.sh packages force".
+#
+# glibc opts out of this in its own script. The book warns that -march values
+# it has not tested can break the toolchain packages and names Glibc as one,
+# and glibc already picks AVX2 string routines at runtime through ifunc, so
+# there is nothing to win and a working C library to lose.
+plinux_march=${PLINUX_MARCH:-native}
+
+if [ "${plinux_march}" != "none" ]; then
+  export CFLAGS="${CFLAGS:--O2 -pipe} -march=${plinux_march}"
+  export CXXFLAGS="${CXXFLAGS:--O2 -pipe} -march=${plinux_march}"
+fi
+
 # Unpack an archive from sources/ into src/ unless it is already there, and
 # print where it landed. Progress goes to stderr so the path stays usable.
 unpack(){

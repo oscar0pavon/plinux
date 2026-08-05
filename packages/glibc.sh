@@ -26,6 +26,12 @@ apply_patch 'glibc-*-fhs-1.patch'
 # musl-gcc, which would be nonsense here.
 export CC=gcc
 
+# And without common.sh's -march. The book warns that untested -march values
+# can break the toolchain packages and names Glibc among them, and glibc
+# already selects AVX2 string and memory routines at runtime through ifunc, so
+# building it for one CPU wins nothing that is not already happening.
+unset CFLAGS CXXFLAGS
+
 # The book's sed on stdlib/abort.c is skipped: it fixes Valgrind, which is a
 # BLFS concern and not part of this system.
 
