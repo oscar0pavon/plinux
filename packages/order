@@ -25,6 +25,12 @@ openssl
 kmod
 udev
 
+# the message bus, and the XML parser it reads its configuration with.
+# Not LFS packages: the book builds no D-Bus, it only creates the messagebus
+# user. iwd will not start without a system bus, and seatd and sway want one.
+expat
+dbus
+
 # still to come, roughly in this order:
 #
 #   grep sed gawk findutils diffutils

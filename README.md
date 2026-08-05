@@ -122,6 +122,13 @@ Built so far:
 | openssl | libcrypto, likewise |
 | kmod | module loading, and libkmod for udev |
 | udev | device nodes, `/dev/disk/by-uuid`, interface renaming |
+| expat | XML parsing, which dbus reads its configuration with |
+| dbus | the message bus; iwd will not start without one |
+
+dbus is the first package here that is not in the LFS book. The book builds no
+D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
+follows upstream rather than `docs/`. Note that dbus 1.16 dropped autotools:
+there is no `configure` in the tarball, only meson.
 
 The two C libraries coexist: separate loaders, separate names, and each binary
 names the one it was linked against. musl installs its libraries in

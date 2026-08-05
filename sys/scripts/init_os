@@ -14,6 +14,11 @@ seatd &
 
 mkdir -p /run/dbus
 
+# The bus refuses to start without a machine ID. --ensure only writes one if
+# it is missing, so this costs nothing after the first boot; a fresh image has
+# no ID, since baking one in at build time would give every copy the same one.
+dbus-uuidgen --ensure=/etc/machine-id
+
 dbus-daemon --system
 
 set_ip > /dev/null 2>&1 &

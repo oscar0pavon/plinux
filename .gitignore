@@ -28,6 +28,8 @@ src/attr-*/
 src/acl-*/
 src/libcap-*/
 src/openssl-*/
+src/expat-*/
+src/dbus-*/
 src/systemd-*/
 src/systemd-257.8.tar.gz
 logs/
