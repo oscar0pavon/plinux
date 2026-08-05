@@ -3,8 +3,8 @@ CFLAGS := -Wextra -Wall -Os
 LDFLAGS := -s -static
 
 
-pinit: main.c
-	$(CC) -std=gnu99 -pthread $(CFLAGS) $(LDFLAGS) main.c -o pinit -lpthread
+pinit: main.c programs.h
+	$(CC) -std=gnu99 $(CFLAGS) $(LDFLAGS) main.c -o pinit
 	upx pinit
 	
 	

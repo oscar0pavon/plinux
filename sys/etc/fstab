@@ -1,0 +1,10 @@
+# fstab for the VM image. pinit runs "mount -a -F" from here, so this file
+# owns every block device; the pseudo-filesystems are mounted by pinit itself
+# and must not be listed.
+#
+# The root filesystem is mounted by the kernel from the root= parameter in
+# pboot.conf, before pinit runs, so it is not listed either.
+#
+# file system      mount-point  type   options   dump  fsck
+
+/dev/sda1          /boot        vfat   defaults  0     0

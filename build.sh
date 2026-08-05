@@ -481,6 +481,11 @@ mkdir -p ${build_directory}/etc
 cp ${working_directory}/sys/etc/passwd ${build_directory}/etc/
 cp ${working_directory}/sys/etc/group  ${build_directory}/etc/
 
+# pinit runs "mount -a -F" for the block devices, so this file is what decides
+# what the image mounts. The workstation keeps its own /etc/fstab; this one
+# describes the VM disk.
+cp ${working_directory}/sys/etc/fstab  ${build_directory}/etc/
+
 # plogin sets HOME=/root and chdir()s there, so without these the login shell
 # falls back to bash's default prompt and none of this configuration loads.
 cp ${working_directory}/sys/root/.bash_profile ${build_directory}/root/

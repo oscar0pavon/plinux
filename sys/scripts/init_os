@@ -16,13 +16,15 @@ mkdir -p /run/dbus
 
 dbus-daemon --system
 
-set_ip 1&> /dev/null &
+set_ip > /dev/null 2>&1 &
 
-swapon /dev/nvme1n1p7
-mount /dev/nvme1n1p1 /data
-mount /dev/nvme1n1p8 /data3
-mount /dev/nvme1n1p9 /data2
-mount /dev/nvme1n1p10 /data4
+# The filesystems belong to pinit, which runs "mount -a -F" over /etc/fstab
+# before any of this. These two are kept only so a machine still booting the
+# older pinit comes up the same way; both skip anything already mounted, so
+# they cost nothing here and can be dropped once every machine runs the new
+# init. The devices themselves are named by UUID in /etc/fstab.
+mount -a
+swapon -a
 
 #server &
 

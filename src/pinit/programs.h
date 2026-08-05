@@ -1,6 +1,5 @@
 
 #include <unistd.h>
-#include <pthread.h>
 #include <time.h>
 //#define _XOPEN_SOURCE 200809L
 #include <signal.h>
@@ -32,14 +31,19 @@ static char * const mount_pts_commnad[] = {"devpts","/dev/pts", "devpts"};
 
 static char * const mount_efivars_commnad[] = {"efivarfs","/sys/firmware/efi/efivars", "efivarfs"};
 
-static char * const mount_boot_commnad[] = {"/dev/nvme0n1p1","/boot", "vfat"};
-
-static char * const mount_disk_commnad[] = {"/dev/nvme0n1p5","/root/disk", "ext4"};
-static char * const mount_disk2_commnad[] = {"/dev/sda1","/disk2", "ext4"};
-
 static char * const mount_shm_commnad[] = {"tmpfs","/dev/shm", "tmpfs"};
 
 static char * const mount_run_commnad[] = {"tmpfs","/run", "tmpfs"};
+
+/* The block devices come from /etc/fstab rather than from this file, so one
+   pinit boots both the workstation and the VM image. -F forks per device, so
+   filesystems on different drives mount in parallel while filesystems on the
+   same drive stay in fstab order. libmount needs /proc, which is mounted
+   before this runs. */
+static char * const mount_all_command[] = {"/bin/mount","-a","-F", NULL};
+
+/* swap likewise: "swap" lines in the same fstab */
+static char * const swapon_all_command[] = {"/sbin/swapon","-a", NULL};
 
 /* pgetty takes the tty as argv[1]; it parses no options */
 static char * const mingetty1[] = {"/bin/pgetty", "tty1",NULL};
