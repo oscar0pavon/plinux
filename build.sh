@@ -34,7 +34,8 @@ Commands:
               source changed
   packages    Build the LFS packages listed in packages/order into obj/.
               Already-installed ones are skipped; "packages force"
-              rebuilds them anyway
+              rebuilds them anyway. On a terminal the package being built
+              is shown on a line pinned to the top of the screen
   verbose     Not a command: add it to any of the above, or set VERBOSE=1,
               to stream build output instead of only logging it
   clean       Clean every source tree, bash's configure output and
@@ -123,6 +124,46 @@ run(){
   return 1
 }
 
+# A line pinned to the top of the terminal naming the package being built.
+# Build output scrolls underneath it: the terminal's scroll region is set to
+# everything below row 1, so nothing can overwrite the status.
+#
+# Only when stdout is a terminal. Redirected to a file or a pipe these escapes
+# would just be noise in the log.
+status_active=
+
+status_start(){
+  [ -t 1 ] || return 0
+
+  status_rows=$(tput lines 2>/dev/null) || status_rows=${LINES:-24}
+  status_active=1
+
+  printf '\e[2;%dr' "${status_rows}"   # scroll region: row 2 to the bottom
+  printf '\e[%d;1H' "${status_rows}"   # park the cursor inside it
+
+  # restore the terminal however this exits, including Ctrl-C: a shell left
+  # with a scroll region set behaves as if the top line were stuck
+  trap status_stop EXIT
+  trap 'status_stop; exit 130' INT
+  trap 'status_stop; exit 143' TERM
+}
+
+status_stop(){
+  [ -n "${status_active}" ] || return 0
+  status_active=
+
+  printf '\e[r'                        # whole screen scrolls again
+  printf '\e[1;1H\e[2K'                # wipe the status row
+  printf '\e[%d;1H' "${status_rows}"
+}
+
+# \e7 and \e8 save and restore the cursor, so writing the status does not
+# disturb where the build output is being written
+status_set(){
+  [ -n "${status_active}" ] || return 0
+  printf '\e7\e[1;1H\e[2K\e[7m %s \e[0m\e8' "$1"
+}
+
 if [ ! -d obj ];then
   mkdir obj
   mkdir -p obj/usr/bin
@@ -182,8 +223,17 @@ if [ "$1" == "packages" ]; then
   stamp_directory=${build_directory}/.packages
   mkdir -p "${stamp_directory}"
 
+  package_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
+                    "${working_directory}/packages/order")
+  package_number=0
+
+  status_start
+  status_set "starting"
+
   while read -r package; do
     case "${package}" in ''|\#*) continue ;; esac
+
+    package_number=$((package_number + 1))
 
     script=${working_directory}/packages/${package}.sh
 
@@ -199,16 +249,20 @@ if [ "$1" == "packages" ]; then
     fi
 
     echo "  ${package}"
+    status_set "[${package_number}/${package_total}] building ${package}"
 
     if run "package-${package}" "${script}"; then
       touch "${stamp_directory}/${package}"
     else
       failed=$((failed + 1))
+      status_set "[${package_number}/${package_total}] FAILED ${package}"
       # later packages link against earlier ones, so carrying on would only
       # produce a second, more confusing failure
       break
     fi
   done < "${working_directory}/packages/order"
+
+  status_stop
 
   echo
   if [ "${failed}" -ne 0 ]; then
