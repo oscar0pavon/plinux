@@ -36,10 +36,12 @@ static void run_sync(char* const command[]){
     waitpid(pid, NULL, 0);
 }
 
-/* The ip commands are ordered: the address has to exist before the route and
-   the link that use it. The whole sequence runs in one child so PID 1 never
-   blocks waiting for the network. */
-static void network_setup(void){
+/* Loopback only, and the address has to be added before the link is brought
+   up. Runs in one child so PID 1 does not block on two execs.
+
+   Wireless is not configured here. wlan0 does not exist this early, and iwd
+   manages it from the session anyway. */
+static void loopback_setup(void){
   if(fork() != 0)
     return;
 
@@ -48,11 +50,6 @@ static void network_setup(void){
 
   run_sync(ip_addr_lo_command);
   run_sync(ip_lo_up);
-
-  run_sync(ip_set_up_command);
-  run_sync(wpa_command);            /* -B, daemonises itself */
-  run_sync(ip_addr_command);
-  run_sync(ip_route_command);
 
   _exit(0);
 }
@@ -149,7 +146,7 @@ void initialize(){
 
   storage_setup();
 
-  network_setup();
+  loopback_setup();
 
   launch_getty(mingetty1[0],mingetty1);
   launch_getty(mingetty2[0],mingetty2);

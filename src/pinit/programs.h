@@ -21,8 +21,6 @@
 #define	LINUX_REBOOT_CMD_POWER_OFF	0x4321FEDC
 
 int symlink(const char *target, const char *linkpath);
-//wifi
-#define DEV "wlan0"
 
 static char * const mount_sys_commnad[] = {"sysfs","/sys", "sysfs"};
 static char * const mount_proc_commnad[] = {"proc","/proc", "proc"};
@@ -60,15 +58,11 @@ static char * const udev_script[] = {"/udev.sh",NULL};
 
 
 
-static char * const ip_set_up_command[] = {"/sbin/ip","link", "set" ,DEV, 
-  "up", NULL};
-static char * const wpa_command[] = {"/sbin/wpa_supplicant","-B", "-c" , "/wifi", 
-  "-i", DEV, NULL};
-static char * const ip_addr_command[] = {"/sbin/ip","addr", "add" , "192.168.0.23/24", 
-  "dev",DEV, NULL};
-static char * const ip_route_command[] = {"/sbin/ip","route", "add","default","via",
-  "192.168.0.1", "src", "192.168.0.23","dev" , DEV, NULL};
-
+/* Only loopback. The wireless interface does not exist yet when pinit runs:
+   the driver and its firmware finish around 1.7s, well after this point, so
+   configuring wlan0 here never took effect. iwd is what brings it up now, and
+   it owns the interface — a second supplicant or a manual address only fights
+   it. lo is different: it always exists, so this always works. */
 static char * const ip_addr_lo_command[] = {"/sbin/ip","addr", "add" ,
   "127.0.0.1/8", "label", "lo", 
   "dev","lo", NULL};
