@@ -27,8 +27,9 @@ Usage: ./build.sh [command]
 Builds plinux into obj/, which is the staged root filesystem.
 
 Commands:
-  (none)      Build everything: pboot, kernel, pinit, pgetty, plogin,
-              bash and glibc, installing each into obj/
+  (none)      Build this project's own components: pboot, kernel, pinit,
+              pgetty, plogin and bash, installing each into obj/. The LFS
+              packages are a separate step, see "packages" below
   virt        Copy obj/ and the bootloader into virtual_machine/disk.raw.
               Builds nothing, so run a plain ./build.sh first if any
               source changed
@@ -39,8 +40,8 @@ Commands:
   quiet       Not a command: add it to any of the above, or set VERBOSE=0,
               to only log build output instead of streaming it. Output is
               streamed by default; "verbose" is accepted and is the default
-  clean       Clean every source tree, bash's configure output and
-              glibc's out-of-tree build directory
+  clean       Clean every source tree, bash's configure output and the
+              out-of-tree build directories
   clean all   As above, and delete obj/ entirely
   tools       Accepted but does nothing; the cross toolchain section at
               the end of this script is unreachable
@@ -381,11 +382,15 @@ if [ "$1" == "clean" ]; then
     popd
   fi
 
-  # glibc builds out of tree, so the build directory is the whole of it
-  if [ -d ${src_directory}/glibc/build ]; then
-    echo "  glibc"
-    rm -rf ${src_directory}/glibc/build
-  fi
+  # glibc and dbus build out of tree, so the build directory is the whole of
+  # their output. These are unpacked tarballs rather than clones, so a full
+  # reset is "rm -rf" on the directory itself; this only undoes the build.
+  for out_of_tree in ${src_directory}/glibc-*/build ${src_directory}/dbus-*/build; do
+    if [ -d "${out_of_tree}" ]; then
+      echo "  ${out_of_tree#${src_directory}/}"
+      rm -rf "${out_of_tree}"
+    fi
+  done
 
   # "clean all" also discards the staged root filesystem
   if [ "$2" == "all" ]; then
@@ -507,31 +512,10 @@ if have_source "Building bash" ${src_directory}/bash; then
 fi
 
 
-if have_source "Building glibc" ${src_directory}/glibc; then
-  pushd ${src_directory}/glibc
-
-  mkdir -p build
-  pushd build
-
-  # libc_cv_slibdir is an absolute path inside the image. Without DESTDIR on
-  # the install, this writes libc.so.6 and the dynamic loader straight into the
-  # host's /usr/lib and replaces the running system's glibc.
-  if run glibc-configure ../configure --prefix=/usr \
-             --disable-werror                       \
-             --disable-nscd                         \
-             libc_cv_slibdir=/usr/lib               \
-             --enable-stack-protector=strong        \
-             --enable-kernel=5.4                    \
-     && run glibc make                              \
-     && run glibc-install make DESTDIR=${build_directory} install; then
-    :
-  else
-    failed=$((failed + 1))
-  fi
-
-  popd
-  popd
-fi
+# glibc is built by packages/glibc.sh, from the tarball download.sh fetches.
+# The step that used to be here worked on src/glibc, a clone that no longer
+# exists, so every build printed "Building glibc" and then skipped it. It also
+# predated the fhs patch and the configparms rootsbindir the package sets.
 
 
 echo "Installing system configuration"
