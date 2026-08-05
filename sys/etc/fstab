@@ -5,6 +5,9 @@
 # The root filesystem is mounted by the kernel from the root= parameter in
 # pboot.conf, before pinit runs, so it is not listed either.
 #
+# nvme0n1 rather than sda: start.sh attaches disk.raw through an NVMe
+# controller, so the guest names it the same way the workstation does.
+#
 # file system      mount-point  type   options   dump  fsck
 
-/dev/sda1          /boot        vfat   defaults  0     0
+/dev/nvme0n1p1     /boot        vfat   defaults  0     0
