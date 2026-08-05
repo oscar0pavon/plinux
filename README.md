@@ -170,15 +170,29 @@ programs then link against a libc that cannot run on the build machine.
 ## Running
 
 ```sh
-./run
+./run              # GTK window, console on the emulated display
+./run headless     # no window, console on serial
+./run help
 ```
 
-Boots the image headless, with the console on serial. There is no window, so to
-shut down use `kill -12 1` from the guest shell, or `pkill qemu-system-x86_64`
-from another terminal.
+The machine is deliberately close to the workstation: q35, `-cpu host`, 8 cpus,
+8G, the disk on an NVMe controller, xHCI, and virtio for the display, keyboard
+and network. So the guest sees `/dev/nvme0n1`, which is why `pboot.conf` and the
+image's `/etc/fstab` name it that way rather than `sda`.
 
-The emulated VGA device is kept even though nothing displays it: pboot draws
-through the GOP that UEFI publishes for it, and `-vga none` would remove it.
+`MEMORY`, `CPUS` and `VGA` override the defaults. `USB_DISK=/dev/sdb ./run`
+passes a host disk through to the guest; it is opt-in because the guest can
+write to it and `/dev/sdb` is whatever was plugged in last.
+
+To shut down, `kill -12 1` from the guest shell, or close the window.
+
+The emulated display adapter is kept even in headless mode: pboot draws through
+the GOP that UEFI publishes for it, and `-vga none` would remove it.
+
+Two guest drivers this depends on, both easy to lose when the kernel config is
+refreshed from the workstation: `CONFIG_DRM_VIRTIO_GPU` for the display, and
+`CONFIG_VIRTIO_NET` for the network — the workstation has no e1000 card, so
+`CONFIG_E1000` is not set and an emulated e1000 would go unclaimed.
 
 ## Boot sequence
 
@@ -213,7 +227,7 @@ m 0                     show menu: 1 yes, 0 no
 e 0                     default entry, by index
 n "plinux"              entry name
 k "vmlinuz"             kernel filename on the ESP
-p "root=/dev/sda2 rw init=/pinit console=tty0 console=ttyS0,115200"
+p "root=/dev/nvme0n1p2 rw init=/pinit rootwait console=tty0 console=ttyS0,115200"
 ```
 
 Sizes are fixed in `src/pboot/types.h` and are not bounds-checked while parsing:
@@ -236,8 +250,13 @@ The VM image is GPT:
 | 1 | 100M | EFI System (FAT) | `EFI/BOOT/BOOTX64.EFI`, `vmlinuz`, `pboot.conf` |
 | 2 | 922M | ext4 | root filesystem, staged from `obj/` |
 
-`/bin`, `/lib` and `/lib64` are relative symlinks into `/usr`. They dangle when
-viewed inside `obj/` and resolve correctly once the tree is `/`, because `..`
+The guest reaches them as `/dev/nvme0n1p1` and `/dev/nvme0n1p2`, since `run`
+attaches the image through an NVMe controller. The build side is unaffected:
+`build.sh virt` writes the image over a loop device either way.
+
+`/bin`, `/lib`, `/lib64`, `/sbin` and `/var/run` are relative symlinks. They
+dangle when viewed inside `obj/` and resolve correctly once the tree is `/`,
+because `..`
 at `/` is `/`.
 
 ## Installing pboot on real hardware
