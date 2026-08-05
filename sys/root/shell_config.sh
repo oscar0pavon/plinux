@@ -89,8 +89,6 @@ export JAVA_HOME
 
 #export QT6PREFIX=/opt/qt6
 
-export FTP_PASS_KEVIN='Cin!V6l9Dn66Bu'
-
 export QT_PLUGIN_PATH=/opt/qt6/plugins
 
 #export QT_QPA_PLATFORM_PLUGIN_PATH=$QT6DIR/plugins/platforms
@@ -114,4 +112,3 @@ export CCACHE_DISABLE=1
 
 export GRIM_DEFAULT_DIR=/root/grim
 
-export TAVILY_API_KEY=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
