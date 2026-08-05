@@ -12,6 +12,13 @@ glibc
 musl
 coreutils
 
+# the text tools every shell script reaches for. musl, like coreutils:
+# these are standalone programs, nothing links against them.
+sed
+grep
+gawk
+findutils
+
 # udev's dependencies, then udev. All of these are glibc programs: their
 # libraries are linked into udev, so they have to agree on the C library.
 #
@@ -33,9 +40,12 @@ dbus
 
 # still to come, roughly in this order:
 #
-#   grep sed gawk findutils diffutils
+#   diffutils
 #   tar gzip xz
-#   iproute2      pinit already execs /sbin/ip and nothing provides it
 #   zlib ncurses
 #   e2fsprogs     fsck and mke2fs for the ext4 root
 #   procps-ng psmisc
+#
+# iproute2 is no longer on this list as a requirement. Nothing in the boot
+# path runs ip: pinit sets loopback with SIOCSIFADDR and iwd configures the
+# wireless interface over rtnetlink. Still worth having interactively.
