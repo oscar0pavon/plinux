@@ -211,6 +211,15 @@ fi
 # how udev ended up unable to create /run/udev. Done unconditionally so trees
 # made before these were listed get them too.
 mkdir -p obj/{dev,proc,sys,run,var,boot,mnt,etc,root}
+
+# /var/run is where programs written before /run existed still look. iwd is
+# one: the ell it bundles compiles in unix:path=/var/run/dbus/system_bus_socket
+# while dbus listens on /run/dbus/system_bus_socket, so without this iwd
+# reports "Failed to initialize D-Bus" and exits. Relative, like /bin and
+# /lib, so it resolves in the image rather than in obj.
+if [ ! -e obj/var/run ]; then
+  ln -sf ../run obj/var/run
+fi
 mkdir -p obj/tmp && chmod 1777 obj/tmp
 
 # added after the original skeleton, so create them for existing trees too
