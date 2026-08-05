@@ -618,7 +618,14 @@ if have_source "Building bash" ${src_directory}/bash; then
   # Static against musl, with bash's bundled termcap. A dynamic bash would pull
   # in libncursesw.so.6, which nothing in src/ builds.
   if run bash ./build_static.sh; then
-    stage bash ${build_directory}/usr/bin/bash || failed=$((failed + 1))
+    if stage bash ${build_directory}/usr/bin/bash; then
+      # Every script in sys/scripts starts #!/bin/sh, and so does most of what
+      # will ever be written for this system. Without this they do not fail at
+      # the first command, they fail to execute at all.
+      ln -sf bash ${build_directory}/usr/bin/sh
+    else
+      failed=$((failed + 1))
+    fi
   else
     failed=$((failed + 1))
   fi
