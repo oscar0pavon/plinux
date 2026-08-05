@@ -34,6 +34,12 @@ src/sed-*/
 src/grep-*/
 src/gawk-*/
 src/findutils-*/
+src/zlib-*/
+src/xz-*/
+src/zstd-*/
+src/ncurses-*/
+src/readline-*/
+src/libxcrypt-*/
 src/systemd-*/
 src/systemd-257.8.tar.gz
 logs/
