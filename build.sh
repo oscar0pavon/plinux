@@ -485,15 +485,21 @@ stage(){
 # missing tree is reported and skipped instead of aborting the whole build.
 have_source(){
   echo "$1"
+  status_set "$1"
 
   if [ ! -d "$2" ]; then
     echo "  skipping, $2 is not present" >&2
+    status_set "$1   skipped, no source"
     skipped=$((skipped + 1))
     return 1
   fi
 
   return 0
 }
+
+# Every component below announces itself through have_source, so the status
+# line follows the build without each step having to set it.
+status_start
 
 if have_source "Building bootloader" ${src_directory}/pboot; then
   pushd ${src_directory}/pboot
@@ -580,6 +586,7 @@ fi
 
 
 echo "Installing system configuration"
+status_set "Installing system configuration"
 
 mkdir -p ${build_directory}/root
 mkdir -p ${build_directory}/etc
@@ -609,6 +616,7 @@ cp ${working_directory}/sys/root/shell_config.sh ${build_directory}/root/
 # PATH, which does not exist on the target
 cp ${working_directory}/sys/scripts/* ${build_directory}/usr/bin/
 
+status_stop
 
 echo
 if [ "${skipped}" -ne 0 ]; then
