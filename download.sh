@@ -49,9 +49,17 @@ USAGE
 # wget-list-sysv go through ftpmirror, so this is worth trying before
 # calling a download failed.
 fallback_url(){
+  local file
+
   case "$1" in
     https://ftpmirror.gnu.org/*)
       echo "https://ftp.gnu.org/gnu/${1#https://ftpmirror.gnu.org/}"
+      ;;
+    https://download.savannah.gnu.org/*|https://download.savannah.nongnu.org/*)
+      # savannah is not reachable from here either. Void's distfile mirror
+      # keeps the same tarballs under <name>-<version>/<file>.
+      file=${1##*/}
+      echo "https://sources.voidlinux.org/${file%.tar.*}/${file}"
       ;;
   esac
 }

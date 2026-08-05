@@ -127,7 +127,7 @@ if [ ! -d obj ];then
   mkdir obj
   mkdir -p obj/usr/bin
   mkdir -p obj/usr/lib
-  mkdir -p obj/sbin
+  mkdir -p obj/usr/sbin
   mkdir -p obj/dev
   mkdir -p obj/proc
 
@@ -135,13 +135,29 @@ if [ ! -d obj ];then
   # ".." at "/" is "/". They are dangling here in the build tree.
   ln -sf ../../../usr/bin obj/bin
   ln -sf ../../../usr/lib obj/lib
+  # packages install to /usr/sbin, but pinit execs /sbin/ip and pdevices
+  # runs /sbin/udevd
+  ln -sf ../../../usr/sbin obj/sbin
   # ELF binaries hardcode /lib64/ld-linux-x86-64.so.2 as their interpreter
   ln -sf ../../../usr/lib obj/lib64
 fi
 
-# added after the original skeleton, so create it for existing trees too
+# Mount points and standard directories. pinit mounts tmpfs on /run and
+# sysfs on /sys, and a mount whose target does not exist just fails, which is
+# how udev ended up unable to create /run/udev. Done unconditionally so trees
+# made before these were listed get them too.
+mkdir -p obj/{dev,proc,sys,run,var,boot,mnt,etc,root}
+mkdir -p obj/tmp && chmod 1777 obj/tmp
+
+# added after the original skeleton, so create them for existing trees too
 if [ ! -e obj/lib64 ];then
   ln -sf ../../../usr/lib obj/lib64
+fi
+
+# obj/sbin used to be a real directory, which left /sbin/ip and /sbin/udevd
+# unreachable. Only replaced when empty, so nothing installed there is lost.
+if [ -d obj/sbin ] && [ ! -L obj/sbin ] && [ -z "$(ls -A obj/sbin 2>/dev/null)" ];then
+  rmdir obj/sbin && ln -sf ../../../usr/sbin obj/sbin
 fi
 
 if [ -d obj ];then

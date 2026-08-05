@@ -12,9 +12,16 @@ glibc
 musl
 coreutils
 
-# udev's dependencies, then udev. All three are glibc programs: libblkid and
-# libkmod are linked into udev, so they have to agree on the C library.
+# udev's dependencies, then udev. All of these are glibc programs: their
+# libraries are linked into udev, so they have to agree on the C library.
+#
+# udevadm needs libblkid, libmount, libacl, libcap and libcrypto. attr is
+# here only because acl needs it.
 util-linux
+attr
+acl
+libcap
+openssl
 kmod
 udev
 
