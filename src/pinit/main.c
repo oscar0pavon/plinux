@@ -36,22 +36,53 @@ static void run_sync(char* const command[]){
     waitpid(pid, NULL, 0);
 }
 
-/* Loopback only, and the address has to be added before the link is brought
-   up. Runs in one child so PID 1 does not block on two execs.
+/* Loopback, configured here rather than by running ip(8) twice.
 
-   Wireless is not configured here. wlan0 does not exist this early, and iwd
-   manages it from the session anyway. */
+   This is the only interface pinit touches. wlan0 does not exist this early
+   -- the wireless firmware finishes around 1.7s -- and iwd owns it once it
+   does, setting the address over rtnetlink itself. So iproute2 was being
+   carried for 127.0.0.1 and nothing else.
+
+   The SIOCSIF* ioctls are enough for a single IPv4 address and predate
+   netlink by a decade; they are still the shortest path to a loopback that
+   works. Two forks, two execs and a package dependency for three ioctls. */
 static void loopback_setup(void){
-  if(fork() != 0)
+  int socket_handle = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+  struct ifreq request;
+  struct sockaddr_in *address = (struct sockaddr_in *)&request.ifr_addr;
+
+  if(socket_handle < 0){
+    report_error("socket", "lo", errno);
     return;
+  }
 
-  sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
-  setsid();
+  memset(&request, 0, sizeof(request));
+  strcpy(request.ifr_name, "lo");
 
-  run_sync(ip_addr_lo_command);
-  run_sync(ip_lo_up);
+  address->sin_family = AF_INET;
+  address->sin_addr.s_addr = htonl(INADDR_LOOPBACK);   /* 127.0.0.1 */
 
-  _exit(0);
+  if(ioctl(socket_handle, SIOCSIFADDR, &request) < 0)
+    report_error("SIOCSIFADDR", "lo", errno);
+
+  address->sin_addr.s_addr = htonl(0xFF000000);        /* /8 */
+
+  if(ioctl(socket_handle, SIOCSIFNETMASK, &request) < 0)
+    report_error("SIOCSIFNETMASK", "lo", errno);
+
+  /* Read the flags back before setting them: the kernel already has
+     IFF_LOOPBACK on this interface and writing a hand-built set would clear
+     whatever else it has decided belongs there. */
+  if(ioctl(socket_handle, SIOCGIFFLAGS, &request) < 0){
+    report_error("SIOCGIFFLAGS", "lo", errno);
+  } else {
+    request.ifr_flags |= IFF_UP | IFF_RUNNING;
+
+    if(ioctl(socket_handle, SIOCSIFFLAGS, &request) < 0)
+      report_error("SIOCSIFFLAGS", "lo", errno);
+  }
+
+  close(socket_handle);
 }
 
 /* The block devices and swap live in /etc/fstab, and mount(8) already knows

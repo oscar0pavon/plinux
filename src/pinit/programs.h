@@ -11,6 +11,13 @@
 
 #include <sys/reboot.h>
 
+/* loopback, configured with SIOCSIF* rather than by running ip(8) */
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+
 #include <string.h>
 
 #include <stdlib.h>
@@ -58,15 +65,6 @@ static char * const udev_script[] = {"/udev.sh",NULL};
 
 
 
-/* Only loopback. The wireless interface does not exist yet when pinit runs:
-   the driver and its firmware finish around 1.7s, well after this point, so
-   configuring wlan0 here never took effect. iwd is what brings it up now, and
-   it owns the interface — a second supplicant or a manual address only fights
-   it. lo is different: it always exists, so this always works. */
-static char * const ip_addr_lo_command[] = {"/sbin/ip","addr", "add" ,
-  "127.0.0.1/8", "label", "lo", 
-  "dev","lo", NULL};
-
-static char* const ip_lo_up[] = {"/sbin/ip","link", 
-  "set", "lo", "up",  NULL};
+/* No network commands here any more. Loopback is set with ioctls in main.c,
+   and iwd configures the wireless interface itself over rtnetlink. */
 

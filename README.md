@@ -130,9 +130,13 @@ a linker script under that name — sharing a directory means one destroys the
 other.
 
 Still to come, roughly in order: grep, sed, gawk, findutils and diffutils,
-which every later `./configure` calls; tar, gzip and xz; **iproute2**, which
-`pinit` already execs as `/sbin/ip` on every boot with nothing providing it;
-zlib and ncurses; e2fsprogs for the ext4 root; procps-ng and psmisc.
+which every later `./configure` calls; tar, gzip and xz; zlib and ncurses;
+e2fsprogs for the ext4 root; procps-ng and psmisc.
+
+iproute2 is no longer among them. Nothing in the boot path runs `ip`: pinit
+configures loopback with `SIOCSIFADDR` directly, and iwd sets the wireless
+address over rtnetlink itself. It is still worth having for interactive use,
+but the system now comes up without it.
 
 Packages are compiled by the host toolchain and install into `obj/`. Do not
 point `LDFLAGS` at `obj/usr/lib` to pick up a library staged by an earlier
@@ -160,8 +164,9 @@ UEFI firmware
      reads pboot.conf, loads vmlinuz with the configured parameters
   -> kernel
   -> /pinit           PID 1
-     mounts proc, sys, devtmpfs, devpts, tmpfs and the block devices,
-     brings up the network, then starts a getty per console
+     mounts proc, sys, devtmpfs, devpts and tmpfs itself, runs mount -a -F
+     for the block devices in /etc/fstab, configures loopback, then starts
+     a getty per console
   -> pgetty           tty1, tty2, ttyS0
   -> plogin
   -> bash
