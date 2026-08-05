@@ -64,3 +64,7 @@ dbus
 # iproute2 is no longer on this list as a requirement. Nothing in the boot
 # path runs ip: pinit sets loopback with SIOCSIFADDR and iwd configures the
 # wireless interface over rtnetlink. Still worth having interactively.
+
+# wireless. init_os starts it through set_ip; it associates and applies the
+# address itself over rtnetlink. Bundles ell, so there is no separate package.
+iwd

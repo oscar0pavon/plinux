@@ -43,3 +43,4 @@ src/libxcrypt-*/
 src/systemd-*/
 src/systemd-257.8.tar.gz
 logs/
+src/iwd-*/
