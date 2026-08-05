@@ -98,9 +98,21 @@ order and `./build.sh packages` walks it from the top.
 
 ```sh
 ./build.sh packages          # build whatever is not installed yet
+./build.sh packages <name>   # rebuild just that one, installed or not
 ./build.sh packages force    # rebuild them all
 ./build.sh packages quiet    # log the output instead of streaming it
+./build.sh check             # find binaries whose libraries are missing
 ```
+
+Run `check` after building. A package compiled against a host library that
+was never staged installs perfectly and then fails the moment the program is
+run, which is invisible until someone tries it: that is how `kmod` shipped
+unable to start, taking `modprobe` and `depmod` with it, and how `dmesg` and
+`lsblk` were broken for thirteen packages. `check` reads the `NEEDED` entries
+of every binary in `obj/` and reports the ones the image cannot satisfy.
+
+`memusagestat` is expected to fail it. That is a glibc profiling helper
+wanting libgd and libpng, and neither is worth a package here.
 
 Each script sources `packages/common.sh`, which unpacks the tarball from
 `sources/` into `src/` if it is not already there and sets `CC` and the staging
@@ -123,6 +135,9 @@ Built so far:
 | udev | device nodes, `/dev/disk/by-uuid`, interface renaming |
 | expat | XML parsing, which dbus reads its configuration with |
 | dbus | the message bus; iwd will not start without one |
+| sed, grep, gawk, findutils | the text tools every shell script reaches for |
+| zlib, xz, zstd | kmod names all three, so without them modprobe cannot start |
+| ncurses, readline, libxcrypt | named by util-linux; without them dmesg, lsblk, fdisk and sulogin cannot start |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
@@ -135,9 +150,12 @@ names the one it was linked against. musl installs its libraries in
 a linker script under that name — sharing a directory means one destroys the
 other.
 
-Still to come, roughly in order: grep, sed, gawk, findutils and diffutils,
-which every later `./configure` calls; tar, gzip and xz; zlib and ncurses;
-e2fsprogs for the ext4 root; procps-ng and psmisc.
+Still to come, roughly in order: **e2fsprogs**, since the root filesystem is
+ext4 and nothing can repair it — util-linux supplies `fsck`, but that is only
+a dispatcher and the `fsck.ext4` it looks for is not there; **tar** and
+**gzip**, without which the image cannot unpack anything, including its own
+sources; **procps-ng** for `ps`, `top` and `free`, none of which exist yet;
+then diffutils, psmisc, and `less`.
 
 iproute2 is no longer among them. Nothing in the boot path runs `ip`: pinit
 configures loopback with `SIOCSIFADDR` directly, and iwd sets the wireless
