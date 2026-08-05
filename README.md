@@ -21,17 +21,27 @@ Third-party sources live in `src/` alongside them:
 | linux | mainline | cloned by `./configure`, configured from `sys/kernel_config` |
 | bash | 5.3 | static against musl, with bash's bundled termcap |
 | musl | 1.2.5 | libc for every `p*` component and bash |
-| glibc | 2.41 | staged into the image for dynamically linked binaries |
+| glibc | 2.42 | staged into the image for dynamically linked binaries |
+
+The LFS packages built by `./build.sh packages` are unpacked into `src/` too,
+as versioned directories. They are not tracked; `download.sh` fetches the
+tarballs and the package scripts unpack them.
 
 ## Layout
 
 ```
 build.sh              build everything into obj/, or stage obj/ into the VM image
+configure             clone the kernel and pboot, install sys/kernel_config
+download.sh           fetch the LFS tarballs listed in wget-list-sysv
 run                   symlink to virtual_machine/start.sh
 obj/                  staged root filesystem; becomes / in the image
+packages/             one build script per LFS package, plus the build order
 src/                  component sources and third-party trees
-sys/                  scripts and dotfiles for a running system
+sources/              downloaded tarballs and patches
+sys/                  scripts, dotfiles and /etc content for a running system
 sys/kernel_config     the kernel .config, kept outside the cloned kernel tree
+docs/                 the LFS book, as PDF and as grepable text
+logs/                 per-step build output
 virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 ```
 
@@ -39,11 +49,17 @@ virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 
 ```sh
 ./configure           # clone the component repos kept outside this tree
+./download.sh         # fetch the LFS tarballs into sources/
 ./build.sh help       # all commands
 ./build.sh            # full build into obj/
+./build.sh packages   # build the LFS packages into obj/
 ./build.sh virt       # copy obj/ into virtual_machine/disk.raw
 ./build.sh clean all  # clean sources and delete obj/
 ```
+
+Add `verbose` to any command, or set `VERBOSE=1`, to stream build output as
+well as logging it. Without it each step prints one line and the detail goes to
+`logs/`.
 
 `./configure` is safe to re-run: repositories already cloned are reported and
 skipped, and a directory that exists but is not a clone is left alone rather
@@ -62,7 +78,66 @@ added since the config was saved instead of prompting.
 It needs root for `losetup` and `mount`.
 
 Requires `musl-gcc`, `upx`, `gcc`, and `qemu-system-x86_64`. OVMF firmware is
-included as `virtual_machine/uefi.bios`.
+included as `virtual_machine/uefi.bios`. The packages additionally need
+`meson`, `ninja`, `perl` and `python3`.
+
+Anything built with `musl-gcc` runs its configure tests on the host, so the
+host needs musl's loader present at the path those binaries name:
+
+```sh
+ln -s /musl/lib/libc.so /usr/lib/ld-musl-x86_64.so.1
+```
+
+Without it configure stops at `cannot run C compiled programs`, which reads
+like a broken compiler but is only a missing interpreter.
+
+## Packages
+
+The userland beyond the `p*` components is built from the LFS packages, one
+script per package in `packages/`. `packages/order` lists them in dependency
+order and `./build.sh packages` walks it from the top.
+
+```sh
+./build.sh packages          # build whatever is not installed yet
+./build.sh packages force    # rebuild them all
+./build.sh packages verbose  # stream the output
+```
+
+Each script sources `packages/common.sh`, which unpacks the tarball from
+`sources/` into `src/` if it is not already there and sets `CC` and the staging
+paths. Everything installs with `DESTDIR=obj`, never into the host. A package
+that completes leaves a stamp in `obj/.packages`, so the stamps disappear with
+`clean all` and cannot claim a package is present in an empty tree.
+
+Built so far:
+
+| Package | Why it is here |
+| --- | --- |
+| glibc | udev is part of systemd, which does not build against musl |
+| musl | libc for the `p*` components and bash |
+| coreutils | ls, cp, mkdir and the rest |
+| util-linux | mount, blkid, cfdisk, and libblkid/libmount for udev |
+| attr, acl | libacl, which udev uses to set permissions on device nodes |
+| libcap | libcap, likewise |
+| openssl | libcrypto, likewise |
+| kmod | module loading, and libkmod for udev |
+| udev | device nodes, `/dev/disk/by-uuid`, interface renaming |
+
+The two C libraries coexist: separate loaders, separate names, and each binary
+names the one it was linked against. musl installs its libraries in
+`/usr/lib/musl`, because musl's `libc.so` *is* its loader while glibc installs
+a linker script under that name — sharing a directory means one destroys the
+other.
+
+Still to come, roughly in order: grep, sed, gawk, findutils and diffutils,
+which every later `./configure` calls; tar, gzip and xz; **iproute2**, which
+`pinit` already execs as `/sbin/ip` on every boot with nothing providing it;
+zlib and ncurses; e2fsprogs for the ext4 root; procps-ng and psmisc.
+
+Packages are compiled by the host toolchain and install into `obj/`. Do not
+point `LDFLAGS` at `obj/usr/lib` to pick up a library staged by an earlier
+package: that puts the image's glibc ahead of the host's, and configure's test
+programs then link against a libc that cannot run on the build machine.
 
 ## Running
 
@@ -165,9 +240,33 @@ Two packages stay because only one program in each is superseded:
 | 8.79. Util-linux-2.41.1 | blkid, mount, cfdisk, blockdev and the rest | `agetty`, replaced by [pgetty](src/pgetty) |
 | 8.28. Shadow-4.18.0 | passwd, su, the account database | `login`, replaced by [plogin](src/plogin) |
 
+Shadow is not built yet. The account database is the single root entry in
+`sys/etc/passwd`, which is all a one-user system needs.
+
 Also note LFS builds inside a chroot and installs straight into `/usr`. This
 project stages into `obj/`, so book recipes need `DESTDIR` or an equivalent
 prefix before being run here.
+
+## System configuration
+
+`sys/` holds what a running plinux needs outside of any package. `build.sh`
+installs it as part of a normal build:
+
+| Source | Installed to | Contents |
+| --- | --- | --- |
+| `sys/root/` | `/root/` | `.bash_profile`, `.bashrc`, `shell_config.sh` |
+| `sys/scripts/` | `/usr/bin/` | `init_os`, `set_ip`, `pdevices` |
+| `sys/etc/` | `/etc/` | `passwd`, `group` |
+| `sys/kernel_config` | `src/linux/.config` | installed by `./configure` |
+
+Only root exists on this system, so `/etc/passwd` is a single line and nothing
+is chmodded during staging.
+
+These files are also the ones a plinux workstation runs from directly, by
+symlink rather than by copy. Editing them changes the running machine as well
+as the next image, so a mistake here is felt immediately. They are written to
+tolerate that: no bare `mkdir` without checking the binary exists, `HOME`
+defaulted, and `init_os` only run on `tty1` with no display already up.
 
 ## Downloading LFS sources
 
@@ -198,23 +297,23 @@ The Linux From Scratch book is kept here for build procedures, as the original
 PDF and as text extracted with `pdftotext -layout` so it can be grepped:
 
 ```
-LFS-BOOK-12.4.pdf         the book
-LFS-BOOK-12.4.txt         extracted text, 17371 lines
-LFS-BOOK-12.4-index.txt   section -> line number, 161 entries
+docs/LFS-BOOK-12.4.pdf         the book
+docs/LFS-BOOK-12.4.txt         extracted text, 17371 lines
+docs/LFS-BOOK-12.4-index.txt   section -> line number, 161 entries
 ```
 
 Look a package up in the index, then read from that line:
 
 ```sh
-grep -i udev LFS-BOOK-12.4-index.txt     # 9394  8.76. Udev from Systemd-257.8
-sed -n '9394,9530p' LFS-BOOK-12.4.txt
+grep -i udev docs/LFS-BOOK-12.4-index.txt   # 9394  8.76. Udev from Systemd-257.8
+sed -n '9394,9530p' docs/LFS-BOOK-12.4.txt
 ```
 
 The `-layout` extraction keeps indentation and trailing backslashes, so the
 commands can be copied out directly. Regenerate both files with:
 
 ```sh
-pdftotext -layout LFS-BOOK-12.4.pdf LFS-BOOK-12.4.txt
+pdftotext -layout docs/LFS-BOOK-12.4.pdf docs/LFS-BOOK-12.4.txt
 ```
 
 LFS installs straight into `/usr` because it builds inside a chroot. This
