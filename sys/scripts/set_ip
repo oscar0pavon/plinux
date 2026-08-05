@@ -1,8 +1,17 @@
-#!/bin/bash
+#!/bin/sh
 
-/usr/libexec/iwd &
-sleep 1
-INTERFACE=wlan0
-ip link set $INTERFACE up
-ip addr add 192.168.100.23/24 dev $INTERFACE 
-ip route add default via 192.168.100.1 src 192.168.100.23 dev $INTERFACE 
+# Starts iwd, which does the rest itself.
+#
+# This used to run iwd, sleep 1, then add the address and route with ip(8).
+# The sleep was a guess at how long association takes: guess low and the
+# address lands on an interface that is not associated yet. The address now
+# lives in the network's own file under /var/lib/iwd, with
+# EnableNetworkConfiguration=true in /etc/iwd/main.conf, so iwd applies it at
+# the moment association completes. Networks without an [IPv4] section there
+# get DHCP.
+#
+# iwd needs the D-Bus system bus, which init_os starts before calling this.
+# exec, because init_os already backgrounds this and there is nothing to do
+# after iwd is running.
+
+exec /usr/libexec/iwd
