@@ -2,15 +2,13 @@
 #include <stdio.h>
 #include <errno.h>
 
-#define TIMEO	30
+/* Seconds between the fallback reaps that catch anything SIGCHLD missed */
+#define TIMEO 30
 
 /* Tenths of a second processes get to exit on their own before SIGKILL */
 #define SHUTDOWN_WAIT 50
 
-sigset_t set_of_signals;
-
-FILE* boot_time;
-clock_t init_time;
+static sigset_t set_of_signals;
 
 /* write(2) rather than fprintf: this is also called from freshly forked
    children, where stdio's lock may be held by whoever forked them. */
@@ -132,27 +130,18 @@ static void storage_setup(void){
   _exit(0);
 }
 
+
 /* execvp only returns on failure, and the child must not carry on running
    initialize() when it does: it would fork more children, and rejoin the
    signal loop as a second process believing it is init. */
-static void launch_program(char* const command[]){
-  if(fork() == 0){
-		sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
-		setsid();
-		execvp(command[0], command);
-    report_error("execvp", command[0], errno);
-    _exit(127);
-  }
-}
-
-static pid_t launch_getty(const char* getty_exec,char* const arguments[]){
+static pid_t launch_getty(char* const arguments[]){
   pid_t pid = fork();
 
   if(pid == 0){
-		sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
-		setsid();
-		execvp(getty_exec, arguments);
-    report_error("execvp", getty_exec, errno);
+    sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
+    setsid();
+    execvp(arguments[0], arguments);
+    report_error("execvp", arguments[0], errno);
     _exit(127);
   }
 
@@ -191,7 +180,7 @@ static void getty_start(unsigned int index){
   }
 
   getty_starts[index]++;
-  getty_pid[index] = launch_getty(getty_table[index][0], getty_table[index]);
+  getty_pid[index] = launch_getty(getty_table[index]);
 }
 
 /* Called for every child that has been reaped. Children that are not gettys
@@ -214,9 +203,10 @@ static void getty_replace(pid_t pid){
    EBUSY is not one: it means the filesystem is already there. The kernel
    mounts devtmpfs itself when CONFIG_DEVTMPFS_MOUNT is set, and the call
    below is kept only for kernels built without it. */
-static void mount_now(char* const command[], unsigned long int mode){
-  if(mount(command[0], command[1], command[2], mode, NULL) != 0 && errno != EBUSY)
-    report_error("mount", command[1], errno);
+static void mount_now(char* const filesystem[], unsigned long int mode){
+  if(mount(filesystem[0], filesystem[1], filesystem[2], mode, NULL) != 0
+     && errno != EBUSY)
+    report_error("mount", filesystem[1], errno);
 }
 
 
@@ -225,15 +215,14 @@ static void mount_now(char* const command[], unsigned long int mode){
    more process holding a filesystem open. */
 static int shutting_down = 0;
 
-static void signal_reap(void)
-{
-	pid_t pid;
+static void signal_reap(void){
+  pid_t pid;
 
-	while ((pid = waitpid(-1, NULL, WNOHANG)) > 0)
-		if (!shutting_down)
-			getty_replace(pid);
+  while((pid = waitpid(-1, NULL, WNOHANG)) > 0)
+    if(!shutting_down)
+      getty_replace(pid);
 
-	alarm(TIMEO);
+  alarm(TIMEO);
 }
 
 /* Ask every process to exit, then insist.
@@ -283,7 +272,7 @@ static void shutdown_filesystems(void){
   sync();
 }
 
-void initialize(){
+static void initialize(void){
 
   /* These stay compiled in. They are the same on every machine, they have an
      order fstab cannot express, and keeping them here means a missing or
@@ -291,25 +280,23 @@ void initialize(){
      libmount reads it, and mount(8) runs from storage_setup() below.
 
      The kernel already mounted devtmpfs on /dev (CONFIG_DEVTMPFS_MOUNT=y). */
-  mount_now(mount_proc_commnad, MS_NOSUID | MS_NOEXEC | MS_NODEV);
-  mount_now(mount_sys_commnad,  MS_NOSUID | MS_NOEXEC | MS_NODEV);
-  mount_now(mount_dev_commnad,  MS_NOSUID);
-  mount_now(mount_run_commnad,  0);
+  mount_now(proc_filesystem,  MS_NOSUID | MS_NOEXEC | MS_NODEV);
+  mount_now(sysfs_filesystem, MS_NOSUID | MS_NOEXEC | MS_NODEV);
+  mount_now(dev_filesystem,   MS_NOSUID);
+  mount_now(run_filesystem,   0);
 
-  mount_now(mount_efivars_commnad, 0);          /* needs /sys */
+  mount_now(efivars_filesystem, 0);             /* needs /sys */
 
   mkdir("/dev/pts", S_IRWXU | S_IRWXG | S_IRWXO);
   mkdir("/dev/shm", S_IRWXU | S_IRWXG | S_IRWXO);
 
-  mount_now(mount_pts_commnad, 0);
-  mount_now(mount_shm_commnad, MS_NOSUID | MS_NODEV);
+  mount_now(pts_filesystem, 0);
+  mount_now(shm_filesystem, MS_NOSUID | MS_NODEV);
 
   symlink("/proc/self/fd/0","/dev/stdin");
   symlink("/proc/self/fd/1","/dev/stdout");
   symlink("/proc/self/fd/2","/dev/stderr");
   symlink("/proc/self/fd","/dev/fd");
-
-  //launch_program(udev_script);
 
   storage_setup();
 
@@ -318,44 +305,27 @@ void initialize(){
   for(unsigned int index = 0; index < GETTY_COUNT; index++)
     getty_start(index);
 
-  //launch_program(pulseaudio);
-
-  /* Guarded: fopen returns NULL when the root filesystem is read-only or
-     full, and PID 1 writing through a NULL FILE * is a segfault, which the
-     kernel turns into a panic. The one case where the timing would be most
-     wanted was the one that killed the machine. */
-  if(boot_time != NULL){
-    init_time = clock() - init_time;
-
-    fprintf(boot_time,"init config time = %f seconds\n",
-            ((double)init_time)/CLOCKS_PER_SEC);
-
-    fclose(boot_time);
-    boot_time = NULL;
-  }
 }
 
-void reboot_system(){
+/* RB_AUTOBOOT and RB_POWER_OFF come from <sys/reboot.h>. They used to be
+   spelled out here as the raw kernel magic numbers, which is one more place
+   for a typo that would only show up when the machine failed to restart. */
+static void reboot_system(void){
   shutdown_processes();
   shutdown_filesystems();
-  reboot(LINUX_REBOOT_CMD_RESTART);
+  reboot(RB_AUTOBOOT);
 }
 
-void poweroff_system(){
+static void poweroff_system(void){
   shutdown_processes();
   shutdown_filesystems();
-  reboot(LINUX_REBOOT_CMD_POWER_OFF);
+  reboot(RB_POWER_OFF);
 }
 
-int main(){
+int main(void){
+  int signal;
+
   printf("pinit!\n");
-  
-  boot_time = fopen("boot_time","w");
-  if(!boot_time){
-    printf("Can't create boot file\n");
-  }
-  
- init_time = clock();
 
   if(getpid() != 1){
     printf("Need to be PID 1\n");
@@ -364,28 +334,38 @@ int main(){
 
   chdir("/");
 
+  /* Everything is blocked and collected with sigwait below, so there are no
+     handlers running between instructions and no restarted syscalls. */
   sigfillset(&set_of_signals);
   sigprocmask(SIG_BLOCK, &set_of_signals, NULL);
-  
+
   initialize();
-  
-  int signal;
 
   while(1){
-    alarm(30) ;
-    sigwait(&set_of_signals,&signal);
-    if(signal == SIGCHLD || signal == SIGALRM){
-      signal_reap();
+    /* The alarm is the fallback: SIGCHLD is the normal wakeup, and this
+       catches anything that was missed while another signal was handled. */
+    alarm(TIMEO);
+    sigwait(&set_of_signals, &signal);
+
+    switch(signal){
+      case SIGCHLD:
+      case SIGALRM:
+        signal_reap();
+        break;
+
+      case SIGINT:                /* ctrl-alt-del, via the kernel */
+        printf("reboot!!!!!!\n");
+        reboot_system();
+        break;
+
+      case SIGUSR2:
+        printf("poweroff!!!!!!\n");
+        poweroff_system();
+        break;
+
+      default:
+        break;
     }
-    if(signal == SIGINT){
-      printf("reboot!!!!!!\n");
-      reboot_system();
-    }
-    if(signal == SIGUSR2){
-      printf("poweroff!!!!!!\n");
-      poweroff_system();
-    }
-    
   }
 
   return 0;
