@@ -1,9 +1,17 @@
 #!/bin/sh
 
-/sbin/udevd --daemon &> /dev/null
+# Only if one is not already running. init_os calls this, and init_os runs
+# again every time the login shell on tty1 comes back -- which is what
+# happens when sway exits, since .bash_profile starts it and pinit respawns
+# the getty afterwards. udevd does not refuse a second copy: it starts, and
+# both instances then process the same uevents.
+if ! pgrep -x udevd > /dev/null 2>&1; then
+	/sbin/udevd --daemon &> /dev/null
+fi
 
 # Now traverse /sys in order to "coldplug" devices that have
-# already been discovered
+# already been discovered. Safe to repeat: re-running these only replays
+# events for devices that are already there.
 /bin/udevadm trigger --action=add    --type=subsystems
 /bin/udevadm trigger --action=add    --type=devices
 /bin/udevadm trigger --action=change --type=devices
