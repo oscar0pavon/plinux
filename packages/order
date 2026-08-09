@@ -19,6 +19,12 @@ grep
 gawk
 findutils
 
+# the archiver and the compressor it reaches for first. Same story: standalone
+# musl programs. Until these were here the image could not unpack a tarball,
+# so it could not install anything into itself.
+gzip
+tar
+
 # The compression libraries kmod reads modules with. Without all three,
 # kmod -- and modprobe, depmod and insmod, which are symlinks to it -- cannot
 # start at all: they name libz, liblzma and libzstd as hard dependencies
@@ -59,10 +65,9 @@ dbus
 
 # still to come, roughly in this order:
 #
-#   tar gzip     nothing in the image can unpack a tarball yet, so it cannot
-#                install or build anything from inside itself
 #   procps-ng    kill is here but ps, top and free are not
-#   diffutils psmisc less
+#   diffutils    gzip installed zdiff and zcmp, which call diff and cmp
+#   psmisc less
 #
 # iproute2 is no longer on this list as a requirement. Nothing in the boot
 # path runs ip: pinit sets loopback with SIOCSIFADDR and iwd configures the

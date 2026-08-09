@@ -45,3 +45,5 @@ src/systemd-257.8.tar.gz
 logs/
 src/iwd-*/
 src/e2fsprogs-*/
+src/gzip-*/
+src/tar-*/
