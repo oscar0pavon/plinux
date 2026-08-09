@@ -57,6 +57,9 @@ libxcrypt
 # against instead of building their own.
 e2fsprogs
 
+# process monitoring. After ncurses, which top and watch link against.
+procps-ng
+
 # the message bus, and the XML parser it reads its configuration with.
 # Not LFS packages: the book builds no D-Bus, it only creates the messagebus
 # user. iwd will not start without a system bus, and seatd and sway want one.
@@ -65,9 +68,9 @@ dbus
 
 # still to come, roughly in this order:
 #
-#   procps-ng    kill is here but ps, top and free are not
 #   diffutils    gzip installed zdiff and zcmp, which call diff and cmp
-#   psmisc less
+#   less         and zless calls this one
+#   psmisc       fuser and killall; pidof already came with procps-ng
 #
 # iproute2 is no longer on this list as a requirement. Nothing in the boot
 # path runs ip: pinit sets loopback with SIOCSIFADDR and iwd configures the
