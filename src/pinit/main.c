@@ -4,6 +4,9 @@
 
 #define TIMEO	30
 
+/* Tenths of a second processes get to exit on their own before SIGKILL */
+#define SHUTDOWN_WAIT 50
+
 sigset_t set_of_signals;
 
 FILE* boot_time;
@@ -23,7 +26,8 @@ static void report_error(const char *action, const char *object, int error_numbe
 /* Run a command to completion. Used where the next step depends on this one
    having finished; fork+exec is already concurrent, so everything else just
    gets launched and left alone. */
-static void run_sync(char* const command[]){
+static int run_sync(char* const command[]){
+  int status = 0;
   pid_t pid = fork();
 
   if(pid == 0){
@@ -32,8 +36,31 @@ static void run_sync(char* const command[]){
     _exit(127);
   }
 
-  if(pid > 0)
-    waitpid(pid, NULL, 0);
+  if(pid < 0)
+    return -1;
+
+  waitpid(pid, &status, 0);
+
+  if(!WIFEXITED(status))
+    return -1;
+
+  return WEXITSTATUS(status);
+}
+
+/* Same command, but say so when it fails. Used on the shutdown path, where
+   a silent failure means the disks are left dirty and the only evidence is
+   a filesystem check on the next boot. */
+static void run_sync_checked(char* const command[]){
+  int status = run_sync(command);
+
+  if(status != 0){
+    char message[256];
+    int length = snprintf(message, sizeof(message),
+                          "pinit: %s exited %d\n", command[0], status);
+
+    if(length > 0)
+      write(STDERR_FILENO, message, (size_t)length);
+  }
 }
 
 /* Loopback, configured here rather than by running ip(8) twice.
@@ -118,13 +145,66 @@ static void launch_program(char* const command[]){
   }
 }
 
-static void launch_getty(const char* getty_exec,char* const arguments[]){
-  if(fork() == 0){
+static pid_t launch_getty(const char* getty_exec,char* const arguments[]){
+  pid_t pid = fork();
+
+  if(pid == 0){
 		sigprocmask(SIG_UNBLOCK, &set_of_signals, NULL);
 		setsid();
 		execvp(getty_exec, arguments);
     report_error("execvp", getty_exec, errno);
     _exit(127);
+  }
+
+  return pid;
+}
+
+/* Which process is serving which terminal, and how often it has had to be
+   replaced. A getty exits on every logout; without this the terminal stayed
+   dead until the machine was rebooted. */
+static pid_t getty_pid[GETTY_COUNT];
+static time_t getty_window_start[GETTY_COUNT];
+static int getty_starts[GETTY_COUNT];
+
+/* A getty that cannot run at all -- a missing pgetty, a tty the kernel does
+   not have -- exits immediately, and starting it again on every SIGCHLD
+   would spin forever. Allow a burst, then give that terminal up; the others
+   are unaffected. */
+#define RESPAWN_LIMIT  5
+#define RESPAWN_WINDOW 10
+
+static void getty_start(unsigned int index){
+  time_t now = time(NULL);
+
+  if(now - getty_window_start[index] > RESPAWN_WINDOW){
+    getty_window_start[index] = now;
+    getty_starts[index] = 0;
+  }
+
+  if(getty_starts[index] >= RESPAWN_LIMIT){
+    if(getty_pid[index] != -1){
+      report_error("respawning too fast, giving up on",
+                   getty_table[index][1], EAGAIN);
+      getty_pid[index] = -1;
+    }
+    return;
+  }
+
+  getty_starts[index]++;
+  getty_pid[index] = launch_getty(getty_table[index][0], getty_table[index]);
+}
+
+/* Called for every child that has been reaped. Children that are not gettys
+   -- the mount helpers, anything a login shell orphaned onto init -- match
+   nothing and are simply forgotten, which is the whole job for those. */
+static void getty_replace(pid_t pid){
+  unsigned int index;
+
+  for(index = 0; index < GETTY_COUNT; index++){
+    if(getty_pid[index] == pid){
+      getty_start(index);
+      return;
+    }
   }
 }
 
@@ -140,11 +220,67 @@ static void mount_now(char* const command[], unsigned long int mode){
 }
 
 
+/* Set once the machine is on its way down. Children are being killed on
+   purpose from that point on, and a getty started in response would be one
+   more process holding a filesystem open. */
+static int shutting_down = 0;
+
 static void signal_reap(void)
 {
-	while (waitpid(-1, NULL, WNOHANG) > 0)
-		;
+	pid_t pid;
+
+	while ((pid = waitpid(-1, NULL, WNOHANG)) > 0)
+		if (!shutting_down)
+			getty_replace(pid);
+
 	alarm(TIMEO);
+}
+
+/* Ask every process to exit, then insist.
+
+   Without this, reboot() went straight to the kernel with nothing but
+   sync(): the filesystems were never unmounted, so the vfat /boot came up
+   "Volume was not properly unmounted" on every single boot and the ext4
+   journal replayed every time. sync() flushes data but leaves both dirty. */
+static void shutdown_processes(void){
+  struct timespec pause = {0, 100 * 1000 * 1000};   /* 0.1s */
+  int waited;
+
+  shutting_down = 1;
+
+  kill(-1, SIGTERM);
+
+  for(waited = 0; waited < SHUTDOWN_WAIT; waited++){
+    while(waitpid(-1, NULL, WNOHANG) > 0)
+      ;
+
+    /* nothing left to signal */
+    if(kill(-1, 0) < 0 && errno == ESRCH)
+      return;
+
+    nanosleep(&pause, NULL);
+  }
+
+  kill(-1, SIGKILL);
+  nanosleep(&pause, NULL);
+
+  while(waitpid(-1, NULL, WNOHANG) > 0)
+    ;
+}
+
+static void shutdown_filesystems(void){
+  sync();
+
+  run_sync_checked(swapoff_all_command);
+  run_sync_checked(umount_all_command);
+
+  /* umount(8) cannot unmount the root it is running from, and -r has already
+     remounted it read-only if it got that far. This repeats it directly so a
+     missing or broken umount still leaves a clean root. */
+  if(mount("/", "/", NULL, MS_REMOUNT | MS_RDONLY, NULL) != 0)
+    report_error("remount read-only", "/", errno);
+
+  sync();
 }
 
 void initialize(){
@@ -179,28 +315,35 @@ void initialize(){
 
   loopback_setup();
 
-  launch_getty(mingetty1[0],mingetty1);
-  launch_getty(mingetty2[0],mingetty2);
-  launch_getty(gettyS0[0],gettyS0);
+  for(unsigned int index = 0; index < GETTY_COUNT; index++)
+    getty_start(index);
 
   //launch_program(pulseaudio);
 
-  //timing..
-  init_time = clock() - init_time;
-  double time_taken = ((double)init_time)/CLOCKS_PER_SEC;
+  /* Guarded: fopen returns NULL when the root filesystem is read-only or
+     full, and PID 1 writing through a NULL FILE * is a segfault, which the
+     kernel turns into a panic. The one case where the timing would be most
+     wanted was the one that killed the machine. */
+  if(boot_time != NULL){
+    init_time = clock() - init_time;
 
-  fprintf(boot_time,"init config time = %f seconds\n",time_taken);
+    fprintf(boot_time,"init config time = %f seconds\n",
+            ((double)init_time)/CLOCKS_PER_SEC);
 
-  fclose(boot_time);
+    fclose(boot_time);
+    boot_time = NULL;
+  }
 }
 
 void reboot_system(){
-  sync();
+  shutdown_processes();
+  shutdown_filesystems();
   reboot(LINUX_REBOOT_CMD_RESTART);
 }
 
 void poweroff_system(){
-  sync();
+  shutdown_processes();
+  shutdown_filesystems();
   reboot(LINUX_REBOOT_CMD_POWER_OFF);
 }
 

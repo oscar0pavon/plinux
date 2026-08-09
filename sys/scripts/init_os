@@ -10,7 +10,13 @@ if command -v mkdir > /dev/null; then
 fi
 
 pdevices
-seatd &
+
+# seatd is what sway's session handling talks to; shell_config.sh sets
+# LIBSEAT_BACKEND=seatd to match. An image built without it should say so
+# once rather than print "command not found" on every boot.
+if command -v seatd > /dev/null; then
+	seatd &
+fi
 
 mkdir -p /run/dbus
 
@@ -19,7 +25,17 @@ mkdir -p /run/dbus
 # no ID, since baking one in at build time would give every copy the same one.
 dbus-uuidgen --ensure=/etc/machine-id
 
-dbus-daemon --system
+# Only if one is not already running. This script runs at boot from
+# .bash_profile on tty1, so running it again by hand -- which is how it gets
+# tested -- used to hit the pid file the first run left behind and fail with
+# "The pid file /run/dbus/pid exists". /run is a tmpfs, so a pid file with no
+# process behind it can only be stale.
+if pgrep -x dbus-daemon > /dev/null 2>&1; then
+	echo "init_os: system bus already running" >&2
+else
+	rm -f /run/dbus/pid
+	dbus-daemon --system
+fi
 
 set_ip > /dev/null 2>&1 &
 
@@ -33,5 +49,12 @@ swapon -a
 
 #server &
 
+# The image is a console system until the sway chain is built. Falling
+# through to the login shell is the useful outcome there; dbus-run-session
+# exiting with "failed to exec 'sway'" is not.
 #SHELL=/usr/bin/zsh dbus-run-session sway
-dbus-run-session sway
+if command -v sway > /dev/null; then
+	dbus-run-session sway
+else
+	echo "init_os: no sway installed, staying on the console" >&2
+fi
