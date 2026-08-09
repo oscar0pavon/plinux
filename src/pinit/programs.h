@@ -71,13 +71,6 @@ static char * const * const getty_table[] = {mingetty1, mingetty2, gettyS0};
 
 #define GETTY_COUNT (sizeof(getty_table) / sizeof(getty_table[0]))
 
-static char * const pulseaudio[] = {"/bin/pulseaudio",NULL};
-
-
-static char * const udev_script[] = {"/udev.sh",NULL};
-
-
-
 /* No network commands here any more. Loopback is set with ioctls in main.c,
    and iwd configures the wireless interface itself over rtnetlink. */
 

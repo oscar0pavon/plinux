@@ -348,7 +348,7 @@ void poweroff_system(){
 }
 
 int main(){
-  printf("pboot!\n");
+  printf("pinit!\n");
   
   boot_time = fopen("boot_time","w");
   if(!boot_time){
