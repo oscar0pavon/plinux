@@ -13,6 +13,27 @@ src_directory=${working_directory}/src
 build_directory=${working_directory}/obj
 sources_directory=${working_directory}/sources
 
+# Where the redistributable firmware blobs are taken from, and which ones.
+# The build host is the machine the image is for, so what it loads is what
+# the image needs.
+#
+#   amdgpu       the Radeon card. DRM_AMDGPU is a module and will not
+#                initialise without these, 57M of them
+#   iwlwifi-so-a0-gf-a0-*
+#                Intel Wi-Fi 6E AX211. CONFIG_IWLWIFI is built in, so there
+#                is no module to load, but the firmware still has to be here
+#                or the radio never comes up and iwd has nothing to drive.
+#                The whole API-version family, not just the -89 this kernel
+#                asks for today: the driver walks down from the newest it
+#                knows to the first one present, so a kernel change would
+#                otherwise silently lose the adapter
+#   regulatory.db
+#                cfg80211 loads it separately from any driver; without it
+#                the regulatory domain falls back to the most restrictive
+#                set of channels
+firmware_source=${FIRMWARE_SOURCE:-/usr/lib/firmware}
+firmware_wanted=(amdgpu iwlwifi-so-a0-gf-a0-*.ucode regulatory.db regulatory.db.p7s)
+
 pushd(){
   command pushd "$@" > /dev/null
 }
@@ -584,11 +605,50 @@ if have_source "Building kernel" ${src_directory}/linux; then
     # x86_64 was merged into arch/x86 in 2.6.24; arch/x86_64 has not existed
     # for a very long time
     stage arch/x86/boot/bzImage ${build_directory}/vmlinuz || failed=$((failed + 1))
+
+    # The config builds around 40 modules, amdgpu among them, and none of
+    # them used to be installed: the image booted with no GPU driver at all
+    # on real hardware. The VM hid this, because virtio-gpu is built in.
+    #
+    # INSTALL_MOD_PATH ends in /usr on purpose. The kernel appends
+    # "lib/modules", and obj/lib is a symlink to ../../../usr/lib, which from
+    # obj/ resolves to the *host* /usr/lib. Passing obj alone here would
+    # install this kernel's modules over the build machine's own.
+    if ! run kernel-modules make modules_install       \
+             INSTALL_MOD_PATH=${build_directory}/usr   \
+             INSTALL_MOD_STRIP=1; then
+      failed=$((failed + 1))
+    fi
   else
     failed=$((failed + 1))
   fi
 
   popd
+fi
+
+# Firmware the drivers ask the kernel for at probe time. Not built from
+# anything here: these are redistributable blobs, taken from the build host,
+# which is the machine the image is for.
+#
+# Only what this hardware loads. All of /usr/lib/firmware is 1.1G against a
+# 922M root partition, so copying the lot is not an option even if it were
+# worth it.
+if [ -d "${firmware_source}" ]; then
+  echo "Installing firmware"
+
+  mkdir -p ${build_directory}/usr/lib/firmware
+
+  for entry in "${firmware_wanted[@]}"; do
+    # A glob that matches nothing expands to itself, which would then be
+    # reported as a missing file. Let the shell tell us instead.
+    for match in ${firmware_source}/${entry}; do
+      if [ -e "${match}" ]; then
+        cp -a "${match}" ${build_directory}/usr/lib/firmware/
+      else
+        echo "  no firmware matching ${entry}" >&2
+      fi
+    done
+  done
 fi
 
 if have_source "Building init PID 1" ${src_directory}/pinit; then
