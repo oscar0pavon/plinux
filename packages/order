@@ -58,6 +58,9 @@ libxcrypt
 # against instead of building their own.
 e2fsprogs
 
+# and the FAT tools, for the EFI system partition. From BLFS, not LFS.
+dosfstools
+
 # process monitoring. After ncurses, which top and watch link against.
 procps-ng
 
