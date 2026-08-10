@@ -231,7 +231,7 @@ fi
 # sysfs on /sys, and a mount whose target does not exist just fails, which is
 # how udev ended up unable to create /run/udev. Done unconditionally so trees
 # made before these were listed get them too.
-mkdir -p obj/{dev,proc,sys,run,var,boot,mnt,etc,root}
+mkdir -p obj/{dev,proc,sys,run,var,var/log,boot,mnt,etc,root}
 
 # /var/run is where programs written before /run existed still look. iwd is
 # one: the ell it bundles compiles in unix:path=/var/run/dbus/system_bus_socket

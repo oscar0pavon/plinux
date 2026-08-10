@@ -6,7 +6,13 @@
 # the getty afterwards. udevd does not refuse a second copy: it starts, and
 # both instances then process the same uevents.
 if ! pgrep -x udevd > /dev/null 2>&1; then
-	/sbin/udevd --daemon &> /dev/null
+	# This used to go to /dev/null, which meant a udevd that failed left no
+	# trace anywhere: nothing on this system calls syslog(3), there is no
+	# syslog daemon listening, and the kernel ring buffer only carries the
+	# kernel's own messages. One generation is kept, because the boot whose
+	# log matters most is usually the one that made you reboot.
+	[ -f /var/log/udevd.log ] && mv -f /var/log/udevd.log /var/log/udevd.log.1
+	/sbin/udevd --daemon > /var/log/udevd.log 2>&1
 fi
 
 # Now traverse /sys in order to "coldplug" devices that have
