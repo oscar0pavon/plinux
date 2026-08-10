@@ -54,6 +54,9 @@ ncurses
 readline
 libxcrypt
 
+# the editor. After ncurses, which it links for terminal handling.
+vim
+
 # the ext4 tools. After util-linux, whose libblkid and libuuid these link
 # against instead of building their own.
 e2fsprogs

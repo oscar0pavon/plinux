@@ -112,3 +112,10 @@ export CCACHE_DISABLE=1
 
 export GRIM_DEFAULT_DIR=/root/grim
 
+# The editor anything that spawns one will use: git, crontab, less's "v",
+# sudoedit. Without it they fall back to whatever they were compiled with,
+# which is usually a plain vi that this system does not have under that name
+# until vim installs the symlink.
+export EDITOR=vim
+export VISUAL=vim
+
