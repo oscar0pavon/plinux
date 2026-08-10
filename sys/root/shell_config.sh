@@ -119,3 +119,7 @@ export GRIM_DEFAULT_DIR=/root/grim
 export EDITOR=vim
 export VISUAL=vim
 
+# Same idea for anything that pipes output to a pager. Without it the
+# fallback is more(1) from util-linux, which cannot scroll backwards.
+export PAGER=less
+
