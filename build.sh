@@ -55,6 +55,12 @@ Commands:
   virt        Copy obj/ and the bootloader into virtual_machine/disk.raw.
               Builds nothing, so run a plain ./build.sh first if any
               source changed
+  usb <dev>   Write obj/ to a USB disk as a bootable rescue system. Erases
+              the device, which must be named in full: there is no default.
+              Partitions it GPT, makes the filesystems, then writes a
+              pboot.conf and an /etc/fstab carrying that disk's own
+              identifiers, so the stick boots itself and not the machine it
+              is plugged into. USB_YES=1 skips the typed confirmation
   packages    Build the LFS packages listed in packages/order into obj/.
               Already-installed ones are skipped. On a terminal the package
               being built is shown on a line pinned to the top of the screen
@@ -99,7 +105,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|clean|tools|packages|check|verbose|quiet) ;;
+  ""|virt|usb|clean|tools|packages|check|verbose|quiet) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -467,6 +473,193 @@ if [ "$1" == "virt" ]; then
 
   echo "disk.raw updated"
 
+  exit
+fi
+
+if [ "$1" == "usb" ]; then
+  usb_device=$2
+
+  if [ -z "${usb_device}" ]; then
+    echo "usage: ./build.sh usb /dev/sdX" >&2
+    echo "no default: this erases the device it is given" >&2
+    exit 1
+  fi
+
+  if [ ! -b "${usb_device}" ]; then
+    echo "${usb_device} is not a block device" >&2
+    exit 1
+  fi
+
+  # Refuse a partition. Handing this /dev/sdb1 and having it repartition
+  # /dev/sdb would be a surprise worth avoiding.
+  #
+  # -d matters: without it lsblk reports the device and its children, and
+  # every child names this disk as its parent, so a whole disk looks like a
+  # partition and nothing could ever be written.
+  if [ -n "$(lsblk -dno PKNAME "${usb_device}" 2>/dev/null)" ]; then
+    echo "${usb_device} is a partition; give the whole disk" >&2
+    exit 1
+  fi
+
+  # The disk this machine is running from, which is the one mistake that
+  # cannot be undone
+  usb_name=${usb_device#/dev/}
+  root_source=$(findmnt -no SOURCE / 2>/dev/null)
+  root_disk=$(lsblk -dno PKNAME "${root_source}" 2>/dev/null | head -1)
+
+  if [ -n "${root_disk}" ] && [ "${root_disk}" == "${usb_name}" ]; then
+    echo "${usb_device} is the disk this system is running from" >&2
+    exit 1
+  fi
+
+  if findmnt -rno SOURCE | grep -q "^${usb_device}"; then
+    echo "${usb_device} has mounted partitions; unmount them first" >&2
+    findmnt -rno SOURCE,TARGET | grep "^${usb_device}" >&2
+    exit 1
+  fi
+
+  usb_size=$(lsblk -dno SIZE "${usb_device}" 2>/dev/null | tr -d ' ')
+  usb_model=$(lsblk -dno MODEL "${usb_device}" 2>/dev/null | sed 's/ *$//')
+  usb_removable=$(lsblk -dno RM "${usb_device}" 2>/dev/null | tr -d ' ')
+
+  echo "About to erase ${usb_device}"
+  echo "  model     ${usb_model:-unknown}"
+  echo "  size      ${usb_size:-unknown}"
+  echo "  removable ${usb_removable:-unknown}"
+
+  if [ "${usb_removable}" != "1" ]; then
+    echo "  warning: this device does not report itself as removable" >&2
+  fi
+
+  # USB_YES=1 for a scripted run. Typed confirmation otherwise, and not y/n:
+  # the whole point is that it should not be reachable by leaning on return.
+  if [ "${USB_YES:-}" != "1" ]; then
+    printf "Type ERASE to continue: "
+    read -r usb_answer
+    if [ "${usb_answer}" != "ERASE" ]; then
+      echo "cancelled"
+      exit 1
+    fi
+  fi
+
+  echo "Partitioning ${usb_device}"
+
+  # 256M ESP, the rest for the root filesystem. The partition type GUIDs are
+  # what the firmware looks for: C12A7328 marks the EFI system partition and
+  # 0FC63DAF is a plain Linux filesystem.
+  sfdisk --quiet --wipe always --wipe-partitions always "${usb_device}" <<'PARTITIONS'
+label: gpt
+size=256M, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="EFI System"
+type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="plinux root"
+PARTITIONS
+
+  partprobe "${usb_device}" 2>/dev/null || true
+  udevadm settle 2>/dev/null || true
+
+  # Partition nodes appear asynchronously, the same way they do for the loop
+  # device in the virt step. p1/p2 on nvme and mmc, 1/2 on everything else.
+  if [ -b "${usb_device}p1" ]; then
+    usb_esp=${usb_device}p1
+    usb_root=${usb_device}p2
+  else
+    usb_esp=${usb_device}1
+    usb_root=${usb_device}2
+  fi
+
+  for _ in $(seq 50); do
+    [ -b "${usb_esp}" ] && [ -b "${usb_root}" ] && break
+    sleep 0.1
+  done
+
+  if [ ! -b "${usb_esp}" ] || [ ! -b "${usb_root}" ]; then
+    echo "partitions did not appear on ${usb_device}" >&2
+    exit 1
+  fi
+
+  echo "Making filesystems"
+
+  # mkfs.fat, not mkfs.vfat: dosfstools installs the vfat name only as a
+  # compatibility symlink, and this build host does not have it. FAT32
+  # because it is what UEFI implementations agree on for removable media.
+  mkfs.fat -F 32 -n PLINUXESP "${usb_esp}" > /dev/null
+  mkfs.ext4 -q -F -L plinuxroot "${usb_root}"
+
+  udevadm settle 2>/dev/null || true
+
+  # Read back what the filesystems and the partition table actually got,
+  # rather than assuming a value and writing it into the configuration.
+  #
+  # These are two different kinds of identifier and they are not
+  # interchangeable. The kernel resolves root=PARTUUID= on its own, from the
+  # GPT, before any filesystem is mounted -- root=UUID= would need an
+  # initramfs to run blkid, which this system does not have. /etc/fstab is
+  # read later by mount(8), which does have libblkid, so UUID= is right
+  # there.
+  usb_root_partuuid=$(blkid -s PARTUUID -o value "${usb_root}")
+  usb_esp_uuid=$(blkid -s UUID -o value "${usb_esp}")
+
+  if [ -z "${usb_root_partuuid}" ] || [ -z "${usb_esp_uuid}" ]; then
+    echo "cannot read the identifiers back from ${usb_device}" >&2
+    exit 1
+  fi
+
+  echo "  root PARTUUID ${usb_root_partuuid}"
+  echo "  ESP UUID      ${usb_esp_uuid}"
+
+  usb_mount=$(mktemp -d)
+  mkdir -p "${usb_mount}/boot" "${usb_mount}/root"
+
+  mount "${usb_esp}"  "${usb_mount}/boot"
+  mount "${usb_root}" "${usb_mount}/root"
+
+  if ! mountpoint -q "${usb_mount}/boot" || ! mountpoint -q "${usb_mount}/root"; then
+    echo "mount failed, refusing to write" >&2
+    umount "${usb_mount}/boot" 2>/dev/null
+    umount "${usb_mount}/root" 2>/dev/null
+    rmdir "${usb_mount}/boot" "${usb_mount}/root" "${usb_mount}" 2>/dev/null
+    exit 1
+  fi
+
+  echo "Copying the system"
+
+  mkdir -p "${usb_mount}/boot/EFI/BOOT"
+  cp ${build_directory}/pboot   "${usb_mount}/boot/EFI/BOOT/BOOTX64.EFI"
+  cp ${build_directory}/vmlinuz "${usb_mount}/boot/vmlinuz"
+
+  # Written here rather than copied from virtual_machine/pboot.conf, which
+  # names the VM's disk. Every stick gets its own root=, so one that is
+  # plugged into a machine that already runs plinux still boots itself:
+  # sharing a PARTUUID with the internal disk would leave the kernel to pick
+  # whichever it enumerated first, which for a rescue disk is the wrong one.
+  cat > "${usb_mount}/boot/pboot.conf" <<CONFIGURATION
+m 0
+e 0
+n "plinux"
+k "vmlinuz"
+p "root=PARTUUID=${usb_root_partuuid} rw init=/pinit rootwait console=tty0 console=ttyS0,115200"
+CONFIGURATION
+
+  # -a for the same reason as the virt step: bin, lib and lib64 have to stay
+  # symlinks and the permissions have to survive
+  cp -a ${build_directory}/* "${usb_mount}/root"
+
+  # This stick's own fstab. The image ships one describing the VM disk, and
+  # /dev/nvme0n1p1 does not exist here.
+  cat > "${usb_mount}/root/etc/fstab" <<FSTAB
+# /etc/fstab for a plinux rescue disk, written by ./build.sh usb
+#
+# UUID rather than a device name: this disk is /dev/sda on one machine and
+# /dev/sdc on the next. mount(8) resolves UUID= through libblkid.
+UUID=${usb_esp_uuid}  /boot  vfat  defaults,noauto  0 0
+FSTAB
+
+  sync
+
+  umount "${usb_mount}/boot"
+  umount "${usb_mount}/root"
+  rmdir "${usb_mount}/boot" "${usb_mount}/root" "${usb_mount}" 2>/dev/null
+
+  echo "${usb_device} is ready"
   exit
 fi
 
