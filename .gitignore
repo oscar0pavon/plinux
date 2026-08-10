@@ -52,3 +52,4 @@ src/diffutils-*/
 src/dosfstools-*/
 src/vim-*/
 src/less-*/
+src/tzdata*/

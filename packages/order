@@ -59,6 +59,9 @@ libxcrypt
 vim
 less
 
+# the timezone database. Data only: zic compiles it, nothing links it.
+tzdata
+
 # the ext4 tools. After util-linux, whose libblkid and libuuid these link
 # against instead of building their own.
 e2fsprogs
