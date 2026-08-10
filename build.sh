@@ -214,24 +214,41 @@ status_set(){
   printf '\e7\e[1;1H\e[2K\e[7m %s \e[0m\e8' "$1"
 }
 
-if [ ! -d obj ];then
-  mkdir obj
-  mkdir -p obj/usr/bin
-  mkdir -p obj/usr/lib
-  mkdir -p obj/usr/sbin
-  mkdir -p obj/dev
-  mkdir -p obj/proc
+mkdir -p obj/usr/bin obj/usr/lib obj/usr/sbin
 
-  # These resolve to /usr/... once the tree is the root filesystem, because
-  # ".." at "/" is "/". They are dangling here in the build tree.
-  ln -sf ../../../usr/bin obj/bin
-  ln -sf ../../../usr/lib obj/lib
-  # packages install to /usr/sbin, but pinit execs /sbin/ip and pdevices
-  # runs /sbin/udevd
-  ln -sf ../../../usr/sbin obj/sbin
-  # ELF binaries hardcode /lib64/ld-linux-x86-64.so.2 as their interpreter
-  ln -sf ../../../usr/lib obj/lib64
-fi
+# The /bin -> /usr/bin merge, as four symlinks.
+#
+# The target is "usr/bin", not "../../../usr/bin". Both resolve to /usr/bin
+# once the tree is the root filesystem -- ".." at "/" is "/" -- but only the
+# relative form also resolves correctly when the tree is read from here, as
+# obj/usr/bin. The ../../.. form escapes obj entirely and lands on the build
+# machine's own /usr, which is why "ls obj/bin" once reported tar and ps as
+# installed when neither was: it was listing the host's /usr/bin.
+#
+# That escape is not only a reporting problem. Anything that searches the
+# staged tree by path -- a --sysroot link, INSTALL_MOD_PATH, a check against
+# the image's libraries -- silently reaches the host through it, and succeeds,
+# because this machine runs plinux and its libraries are the right ones. It
+# would only fail in the VM or off the rescue USB.
+#
+# Repaired unconditionally: trees built before this still hold the old form.
+for link in bin:usr/bin sbin:usr/sbin lib:usr/lib lib64:usr/lib;do
+  link_name=obj/${link%%:*}
+  link_target=${link#*:}
+
+  # obj/sbin used to be a real directory, which left /sbin/ip and /sbin/udevd
+  # unreachable. Only replaced when empty, so nothing installed there is lost.
+  if [ -d "${link_name}" ] && [ ! -L "${link_name}" ];then
+    rmdir "${link_name}" 2>/dev/null || {
+      echo "${link_name} is a non-empty directory; expected a symlink to ${link_target}" >&2
+      exit 1
+    }
+  fi
+
+  if [ "$(readlink "${link_name}" 2>/dev/null)" != "${link_target}" ];then
+    ln -sfn "${link_target}" "${link_name}"
+  fi
+done
 
 # Mount points and standard directories. pinit mounts tmpfs on /run and
 # sysfs on /sys, and a mount whose target does not exist just fails, which is
@@ -249,15 +266,35 @@ if [ ! -e obj/var/run ]; then
 fi
 mkdir -p obj/tmp && chmod 1777 obj/tmp
 
-# added after the original skeleton, so create them for existing trees too
-if [ ! -e obj/lib64 ];then
-  ln -sf ../../../usr/lib obj/lib64
-fi
+# The kernel's userspace API headers -- linux/, asm/, asm-generic/, drm/ and
+# the rest of uapi. Every package that speaks to the kernel by structure
+# rather than through libc needs them, and the GUI stack is nothing but: DRM
+# ioctls, evdev, memfd_create.
+#
+# These were never staged. Everything built so far found them in the build
+# machine's /usr/include instead, and nothing complained, because that is a
+# copy of the same headers. Under --sysroot it is the first thing to fail,
+# and correctly so: obj was never a complete place to compile against.
+#
+# INSTALL_HDR_PATH ends in /usr because the kernel appends "include" to it.
+stage_kernel_headers(){
+  [ -d "${src_directory}/linux" ] || return 0
 
-# obj/sbin used to be a real directory, which left /sbin/ip and /sbin/udevd
-# unreachable. Only replaced when empty, so nothing installed there is lost.
-if [ -d obj/sbin ] && [ ! -L obj/sbin ] && [ -z "$(ls -A obj/sbin 2>/dev/null)" ];then
-  rmdir obj/sbin && ln -sf ../../../usr/sbin obj/sbin
+  local status=0
+
+  pushd "${src_directory}/linux"
+  make headers_install INSTALL_HDR_PATH="${build_directory}/usr" > /dev/null || status=$?
+  popd
+
+  return ${status}
+}
+
+# Cheap, but not free, so only when they are absent -- the kernel step below
+# refreshes them whenever the kernel itself is rebuilt. input.h is the check
+# because it is the one libinput and libevdev fail on.
+if [ ! -f obj/usr/include/linux/input.h ];then
+  echo "Installing kernel headers into obj/usr/include"
+  stage_kernel_headers || echo "kernel headers not installed" >&2
 fi
 
 if [ -d obj ];then
@@ -794,6 +831,11 @@ if have_source "Building kernel" ${src_directory}/linux; then
   # The config was saved from 6.14.6 and the clone tracks mainline, so it will
   # be missing symbols the current kernel has added. olddefconfig takes the
   # default for each of them instead of prompting and stalling the build.
+  # Refreshed with the kernel, so a config or version change that adds an
+  # ioctl or a structure field reaches the packages built against it.
+  run kernel-headers make headers_install INSTALL_HDR_PATH=${build_directory}/usr \
+    || failed=$((failed + 1))
+
   if run kernel-config make olddefconfig && run kernel make; then
     # x86_64 was merged into arch/x86 in 2.6.24; arch/x86_64 has not existed
     # for a very long time
@@ -804,9 +846,10 @@ if have_source "Building kernel" ${src_directory}/linux; then
     # on real hardware. The VM hid this, because virtio-gpu is built in.
     #
     # INSTALL_MOD_PATH ends in /usr on purpose. The kernel appends
-    # "lib/modules", and obj/lib is a symlink to ../../../usr/lib, which from
-    # obj/ resolves to the *host* /usr/lib. Passing obj alone here would
-    # install this kernel's modules over the build machine's own.
+    # "lib/modules" to it, and obj/lib is a symlink; back when it pointed at
+    # ../../../usr/lib, passing obj alone here installed this kernel's modules
+    # over the build machine's own. The symlink is relative now, so both spell
+    # the same directory, but naming the real path leaves nothing to resolve.
     if ! run kernel-modules make modules_install       \
              INSTALL_MOD_PATH=${build_directory}/usr   \
              INSTALL_MOD_STRIP=1; then
