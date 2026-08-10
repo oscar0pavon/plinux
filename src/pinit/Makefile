@@ -13,5 +13,8 @@ clean:
 
 install:
 	cp -f pinit /pinit
+	cp -f reboot /usr/sbin/
+	cp -f poweroff /usr/sbin/
+	
 
 

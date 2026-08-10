@@ -1,0 +1,3 @@
+#!/bin/sh
+#rm -rf /tmp/*
+kill -2 1
