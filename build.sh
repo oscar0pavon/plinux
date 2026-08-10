@@ -714,17 +714,34 @@ status_set "Installing system configuration"
 mkdir -p ${build_directory}/root
 mkdir -p ${build_directory}/etc
 
-# Without a user database getpwuid(0) fails, so bash's \u in the prompt shows
-# "I have no name!". Nothing here authenticates yet: plogin execs the shell
-# directly, and the x defers to an /etc/shadow that does not exist, which
-# means no password is valid rather than that none is needed.
-cp ${working_directory}/sys/etc/passwd ${build_directory}/etc/
-cp ${working_directory}/sys/etc/group  ${build_directory}/etc/
-
-# pinit runs "mount -a -F" for the block devices, so this file is what decides
-# what the image mounts. The workstation keeps its own /etc/fstab; this one
-# describes the VM disk.
-cp ${working_directory}/sys/etc/fstab  ${build_directory}/etc/
+# Everything under sys/etc, whatever it is, rather than a cp line per file.
+# There are two sources of /etc in this image and they are not the same kind
+# of thing:
+#
+#   packages install their own defaults straight into obj/etc through
+#   DESTDIR -- mke2fs.conf, vimrc, dbus-1/, ssl/, xattr.conf, udev/. Those
+#   are build output. "clean all" deletes them and rebuilding puts them back,
+#   so editing one there does not survive
+#
+#   sys/etc is this machine's configuration, kept in the repository. Adding a
+#   file here used to mean adding a cp line as well, which is why it held
+#   only passwd, group and fstab
+#
+# Copied last so the machine's version wins over a package default of the
+# same name. Note that packages only build when asked for ("./build.sh
+# packages"), so running that after a plain build puts the package defaults
+# back on top; run the plain build again afterwards.
+#
+# What is in there today:
+#   passwd, group  without a user database getpwuid(0) fails and bash's \u
+#                  shows "I have no name!". Nothing authenticates yet: plogin
+#                  execs the shell directly, and the x defers to an
+#                  /etc/shadow that does not exist, so no password is valid
+#                  rather than none being needed
+#   fstab          pinit runs "mount -a -F" over it, so this decides what the
+#                  image mounts. The workstation keeps its own; this one
+#                  describes the VM disk
+cp -a ${working_directory}/sys/etc/. ${build_directory}/etc/
 
 # plogin sets HOME=/root and chdir()s there, so without these the login shell
 # falls back to bash's default prompt and none of this configuration loads.
