@@ -50,3 +50,13 @@ https://gitlab.freedesktop.org/emersion/libdisplay-info/-/archive/0.3.0/libdispl
 https://www.x.org/pub/individual/data/xkeyboard-config/xkeyboard-config-2.45.tar.xz
 https://github.com/xkbcommon/libxkbcommon/archive/xkbcommon-1.11.0/libxkbcommon-xkbcommon-1.11.0.tar.gz  libxkbcommon-1.11.0.tar.gz
 https://www.freedesktop.org/software/libevdev/libevdev-1.13.4.tar.xz
+
+# Tier 3. libinput, and the one library it still needs.
+#
+# libinput turns evdev events into gestures, pointer acceleration and
+# button mapping -- the behaviour a compositor is expected to have and
+# should not be reimplementing. mtdev translates the kernel's older
+# multitouch protocol into the current one; nothing on this machine speaks
+# it, but a touchpad on whatever the rescue USB is plugged into might.
+https://bitmath.org/code/mtdev/mtdev-1.1.7.tar.bz2
+https://gitlab.freedesktop.org/libinput/libinput/-/archive/1.30.0/libinput-1.30.0.tar.gz

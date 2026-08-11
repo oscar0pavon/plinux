@@ -127,3 +127,10 @@ libdisplay-info
 xkeyboard-config
 libxkbcommon
 libevdev
+
+# Tier 3. Input handling proper.
+#
+# mtdev first: libinput hands it any device speaking the kernel's older
+# multitouch protocol. Nothing here does, but the rescue USB may meet one.
+mtdev
+libinput

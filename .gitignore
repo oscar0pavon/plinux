@@ -62,3 +62,5 @@ src/libdisplay-info-*/
 src/xkeyboard-config-*/
 src/libxkbcommon-*/
 src/libevdev-*/
+src/mtdev-*/
+src/libinput-*/
