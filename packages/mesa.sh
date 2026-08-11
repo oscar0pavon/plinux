@@ -40,6 +40,21 @@ cd "${directory}"
 # glx has to be disabled too rather than left at 'auto', which means "look for
 # X11 and use it if you find it".
 #
+# Two gallium drivers, for the two machines this image runs on. radeonsi is
+# the Navi 23. virgl is the VM: virtio-gpu has no driver of its own here, so
+# without it EGL fails outright --
+#
+#   virtio_gpu: driver missing
+#   libEGL warning: NEEDS EXTENSION: falling back to kms_swrast
+#   [ERROR] [wlr] Failed to initialize EGL
+#
+# and sway exits with "Failed to create renderer". kms_swrast is llvmpipe,
+# which is not built either. virgl serialises the guest's GL to the host,
+# where it runs on the real card, so the VM exercises the same EGL/GLES2 path
+# as the hardware instead of a software renderer that is never shipped. It
+# needs QEMU built against virglrenderer and started with -device
+# virtio-vga-gl; virtual_machine/start.sh does that.
+#
 # gles1 is the 2003 API; wlroots renders with GLES2. gbm and egl are not
 # optional -- they are how wlroots gets a buffer and a context at all.
 #
@@ -58,7 +73,7 @@ cd "${directory}"
 meson_setup build                      \
       -Dplatforms=wayland              \
       -Degl-native-platform=wayland    \
-      -Dgallium-drivers=radeonsi       \
+      -Dgallium-drivers=radeonsi,virgl \
       -Dvulkan-drivers=amd             \
       -Dllvm=disabled                  \
       -Damd-use-llvm=false             \

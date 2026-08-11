@@ -49,3 +49,16 @@ meson_setup build                \
 ninja -C build
 
 DESTDIR="${build_directory}" ninja -C build install
+
+# The default config sets a wallpaper this image does not have and cannot
+# display: -Ddefault-wallpaper=false dropped the PNG, and swaybg is a separate
+# project that is not built. Left alone, every start prints two errors and
+# "Error(s) loading config!", which is alarming and means nothing.
+#
+# Commented rather than deleted, so it is obvious what to put back if swaybg
+# is ever added.
+sway_config=${build_directory}/etc/sway/config
+
+if [ -f "${sway_config}" ]; then
+  sed -i 's|^output \* bg |#output * bg |' "${sway_config}"
+fi

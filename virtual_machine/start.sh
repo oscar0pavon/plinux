@@ -16,7 +16,7 @@ workstation: q35, the host CPU, an NVMe disk, xHCI and virtio devices.
 Environment:
   MEMORY      guest RAM                     (default 8G)
   CPUS        guest cpu count               (default 8)
-  VGA         display adapter               (default virtio)
+  VGA         display device                (default virtio-vga-gl)
   USB_DISK    host block device to pass in  (default none)
 
 USB_DISK hands a real disk to the guest, which can write to it. It is
@@ -27,7 +27,31 @@ USAGE
 
 memory=${MEMORY:-8G}
 cpus=${CPUS:-8}
-vga=${VGA:-virtio}
+# virtio-vga-gl, not virtio-vga. The plain device gives the guest a
+# virtio-gpu with no GL driver behind it, and mesa here has none for it:
+# EGL fails with "virtio_gpu: driver missing", falls back to kms_swrast --
+# llvmpipe, also not built -- and sway exits with "Failed to create renderer".
+#
+# The -gl device pairs with mesa's virgl gallium driver in the guest and
+# serialises its GL to the host, where it runs on the real card. That makes
+# the VM exercise the same EGL/GLES2 path as the hardware rather than a
+# software renderer that is never shipped.
+#
+# It only exists in a QEMU built against virglrenderer. Falling back rather
+# than failing, because a QEMU without it is otherwise perfectly usable --
+# sway will not start, but everything below the compositor will.
+vga=${VGA:-virtio-vga-gl}
+
+if ! qemu-system-x86_64 -device help 2>/dev/null | grep -q "\"${vga}\""; then
+  if [ "${vga}" = "virtio-vga-gl" ]; then
+    echo "this qemu has no virtio-vga-gl; falling back to virtio-vga" >&2
+    echo "  rebuild it with --enable-virglrenderer for accelerated graphics" >&2
+    vga=virtio-vga
+  else
+    echo "this qemu has no ${vga}" >&2
+    exit 1
+  fi
+fi
 usb_disk=${USB_DISK:-}
 
 case "${1:-}" in
@@ -70,16 +94,25 @@ if [ -n "${usb_disk}" ]; then
 fi
 
 if [ -n "${headless}" ]; then
-  # -display none only drops the window. The adapter stays, so OVMF still
-  # publishes a GOP and pboot's graphics keep working; its text goes to serial
-  # along with the rest of the firmware output.
-  # Do not add -vga none: that would remove the GOP pboot draws on.
-  set -- "$@" -vga "${vga}" -display none -serial stdio
+  # egl-headless rather than none. -display none drops OpenGL with it, and a
+  # guest on virtio-vga-gl then has no GL at all -- which is the whole point
+  # of the device. egl-headless renders offscreen through the host's EGL, so
+  # the guest keeps its accelerated GL with no window on screen.
+  #
+  # The adapter stays either way, so OVMF still publishes a GOP and pboot's
+  # graphics keep working; its text goes to serial with the rest of the
+  # firmware output. Do not add -vga none: that would remove the GOP pboot
+  # draws on.
+  if [ "${vga}" = "virtio-vga-gl" ]; then
+    set -- "$@" -device "${vga}" -display egl-headless -serial stdio
+  else
+    set -- "$@" -device "${vga}" -display none -serial stdio
+  fi
 else
   # gl=on hands rendering to the host GPU. show-tabs and show-menubar off keep
   # the window to just the guest display.
   set -- "$@" \
-    -vga "${vga}" \
+    -device "${vga}" \
     -display gtk,gl=on,show-tabs=off,show-menubar=off \
     -boot menu=on,splash-time=10000
 fi
