@@ -3,6 +3,61 @@
 A complete Linux distribution built from source, with its own bootloader, init,
 getty and login written in C. No GRUB, no systemd, no busybox.
 
+## What it is
+
+plinux is a single-user workstation system, built the way Linux From Scratch
+builds one — every package compiled from its own tarball, nothing installed by
+a package manager — but with the parts that usually come from a distribution
+replaced by programs written for it. UEFI hands control to `pboot`, `pboot`
+loads the kernel, the kernel runs `pinit` as PID 1, `pinit` starts `pgetty` on
+each console, and `pgetty` runs `plogin`, which execs the shell. None of that
+chain is GRUB, systemd, agetty or shadow's `login`. Four C programs, about two
+thousand lines between them, and each one is small enough to read in an
+afternoon.
+
+The system it produces is deliberately small: one user, who is root; two C
+libraries, because `udev` will not build against musl and everything else
+prefers it; and thirty-two packages, which is enough for a console system that
+can partition a disk, repair its own filesystems, join a wireless network and
+edit its own configuration. There is no service manager, no package manager,
+and no toolchain in the image — packages are compiled on the host and staged
+into `obj/`, which becomes the root filesystem.
+
+It is also self-hosting in the sense that matters day to day: the machine this
+is developed on runs plinux, and `sys/` is not a template for the image but the
+running system's actual configuration, reached by symlink. Changing a file
+there changes the workstation and the next image at the same time.
+
+The three ways to run it: `./run` boots the image under QEMU, `build.sh usb`
+writes it to a USB stick as a bootable rescue system that carries its own
+identifiers, and `build.sh` plus the `pboot` install steps put it on real
+hardware. The Wayland stack — wlroots and sway — is the work in progress; the
+system is a console system until it lands.
+
+## Getting it
+
+```sh
+git clone https://github.com/oscar0pavon/plinux
+cd plinux
+./configure              # clone src/linux and src/pboot, install the kernel config
+./download.sh            # fetch the console system's sources into sources/
+./build.sh packages      # the 32 packages in packages/order, into obj/
+./build.sh               # pboot, kernel, pinit, pgetty, plogin, bash
+./build.sh check         # find binaries whose libraries the image lacks
+sudo ./build.sh virt     # write virtual_machine/disk.raw
+./run                    # boot it
+```
+
+That is the whole build. It takes about 45 minutes on 32 threads, most of it
+in the packages, and needs roughly 4G for `src/` and `sources/` on top of the
+450M image. The steps are explained under [Building from
+scratch](#building-from-scratch) below.
+
+`./configure` clones two repositories that are developed outside this tree —
+the kernel from mainline and `pboot` from its own repository — because a
+shallow clone of the kernel is several hundred megabytes and does not belong
+in this history. Everything else with a `p` prefix lives here.
+
 ## Components
 
 Everything with a `p` prefix is written for this project:
@@ -50,28 +105,46 @@ virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 
 ## Building from scratch
 
-On a fresh clone, in order:
+The seven commands are under [Getting it](#getting-it). What each one is for,
+and why they run in that order:
+
+**`./configure`** clones `src/linux` and `src/pboot` and copies
+`sys/kernel_config` to `src/linux/.config`. It has to come first — not because
+`download.sh` needs it, but because every `build.sh` invocation installs the
+kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
+no package will compile without them.
+
+**`./download.sh`** fetches the thirty-four tarballs and patches in
+`wget-list-core`. Nothing else is fetched by default; see [Downloading
+sources](#downloading-sources).
+
+**`./build.sh packages`** walks `packages/order` from the top, running one
+script per package, each installing with `DESTDIR=obj`. A package that
+completes leaves a stamp in `obj/.packages`, so an interrupted run resumes
+rather than starting over. This is the long step, about 40 minutes on 32
+threads.
+
+**`./build.sh`** builds this project's own components — pboot, the kernel,
+pinit, pgetty, plogin and bash — and stages `sys/` on top. It is a separate
+step from `packages` on purpose: the components change often and rebuild in
+minutes, the packages almost never change.
+
+**`./build.sh check`** reads the `NEEDED` entries of every binary in `obj/`
+and reports any whose libraries are not in the image. Run it after both build
+steps; it has nothing useful to say until then. One binary is expected to fail
+it, see [Packages](#packages).
+
+**`sudo ./build.sh virt`** copies `obj/` and the bootloader into
+`virtual_machine/disk.raw` over a loop device, which is what needs root. It
+builds nothing, so run a plain `./build.sh` first if any source changed.
+
+**`./run`** starts QEMU against that image.
+
+Afterwards, the loop while working on it is usually just:
 
 ```sh
-./configure              # clone src/linux and src/pboot, install the kernel config
-./download.sh            # fetch the console system's sources into sources/
-./build.sh packages      # the 32 packages in packages/order, into obj/
-./build.sh               # pboot, kernel, pinit, pgetty, plogin, bash
-./build.sh check         # find binaries whose libraries the image lacks
-sudo ./build.sh virt     # write virtual_machine/disk.raw
-./run                    # boot it
+./build.sh && sudo ./build.sh virt && ./run
 ```
-
-`./configure` has to come first: `download.sh` needs nothing from it, but every
-`build.sh` invocation installs the kernel's userspace API headers out of
-`src/linux`, and the packages will not compile without them.
-
-`packages` before the plain `./build.sh` is not required either way — they
-write into different parts of `obj/` — but it is the useful order, because
-`check` has nothing to say until both have run.
-
-Expect around 40 minutes for the packages on 32 threads, a few minutes for the
-kernel, and an `obj/` of about 450M.
 
 ### What the host needs
 
