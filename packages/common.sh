@@ -83,7 +83,42 @@ plinux_sysroot=${PLINUX_SYSROOT:-${build_directory}}
 if [ "${plinux_sysroot}" != "none" ]; then
   export CFLAGS="${CFLAGS} --sysroot=${plinux_sysroot}"
   export CXXFLAGS="${CXXFLAGS} --sysroot=${plinux_sysroot}"
-  export LDFLAGS="${LDFLAGS:-} --sysroot=${plinux_sysroot}"
+
+  # -L as well as --sysroot, because --sysroot does not cover -l.
+  #
+  # gcc's own library search path includes
+  # .../x86_64-pc-linux-gnu/lib/../lib, which resolves to the build machine's
+  # /usr/lib and is not sysroot-relative, so "-lfoo" finds the host's copy
+  # whatever --sysroot says. That is harmless while the two agree and wrong
+  # the moment they do not: this host carries util-linux 2.39.1 from 2024
+  # while the image stages 2.41.1, and glib 2.86 calls
+  # mnt_monitor_veil_kernel, which exists only in the newer one. glib's
+  # configure test passed, because pkg-config handed it -L obj, and the link
+  # of libgio then failed against the host's older libmount.
+  #
+  # Putting obj first fixes the ordering rather than the search path -- the
+  # host's directories are still there, behind it. That is as far as a native
+  # build can go without a chroot.
+  #
+  # This is what the README used to warn against, on the grounds that it puts
+  # the image's glibc ahead of the host's and configure's test programs then
+  # cannot run. That has been moot since --sysroot went in: crt1.o and libc
+  # already come from obj, and fifty packages have built and run their tests
+  # that way.
+  # -rpath-link as well as -L, because -L does not cover indirect
+  # dependencies either.
+  #
+  # When a program links against libgio, ld has to resolve the symbols libgio
+  # itself imports, so it follows libgio's DT_NEEDED and loads libmount.so.1
+  # to check. For that search it uses -rpath-link, -rpath, LD_LIBRARY_PATH and
+  # the default directories -- and not -L, which applies only to what "-lfoo"
+  # names directly. So obj's libmount was first for glib's own link and the
+  # host's 2.39.1 was still first for everything linking against glib
+  # afterwards, and the symbol glib had just used came back undefined.
+  #
+  # This writes nothing into the output: -rpath-link is link-time only, unlike
+  # -rpath, which would bake a build-machine path into the binary.
+  export LDFLAGS="${LDFLAGS:-} --sysroot=${plinux_sysroot} -L${plinux_sysroot}/usr/lib -Wl,-rpath-link,${plinux_sysroot}/usr/lib"
 fi
 
 # Configure a meson package into a build directory inside its source tree.

@@ -17,10 +17,10 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and fifty packages. Thirty-three of them make a console
+prefers it; and sixty packages. Thirty-three of them make a console
 system that can partition a disk, repair its own filesystems, join a wireless
-network and edit its own configuration; the other seventeen are the Wayland
-stack so far, which does not reach a compositor yet. There is no service manager, no package manager,
+network and edit its own configuration; the other twenty-seven are the
+Wayland stack so far, which does not reach a compositor yet. There is no service manager, no package manager,
 and no toolchain in the image — packages are compiled on the host and staged
 into `obj/`, which becomes the root filesystem.
 
@@ -42,7 +42,7 @@ git clone https://github.com/oscar0pavon/plinux
 cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
 ./download.sh all        # fetch every source into sources/
-./build.sh packages      # the 50 packages in packages/order, into obj/
+./build.sh packages      # the 60 packages in packages/order, into obj/
 ./build.sh               # pboot, kernel, pinit, pgetty, plogin
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
@@ -115,7 +115,7 @@ kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
 no package will compile without them.
 
 **`./download.sh all`** fetches both lists: the thirty-five tarballs and
-patches of `wget-list-core`, and the seventeen of `wget-list-gui`. Plain
+patches of `wget-list-core`, and the 25 of `wget-list-gui`. Plain
 `./download.sh` takes only the core, which is enough for a console system but
 not for `packages/order` as it now stands — that ends with the Wayland tier.
 See [Downloading sources](#downloading-sources).
@@ -274,7 +274,8 @@ unable to start, taking `modprobe` and `depmod` with it, and how `dmesg` and
 of every binary in `obj/` and reports the ones the image cannot satisfy.
 
 `memusagestat` is expected to fail it. That is a glibc profiling helper
-wanting libgd and libpng, and neither is worth a package here.
+wanting libgd, which is not worth a package here. It wanted libpng too until
+cairo needed one.
 
 Each script sources `packages/common.sh`, which unpacks the tarball from
 `sources/` into `src/` if it is not already there and sets `CC` and the staging
@@ -288,7 +289,7 @@ its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `obj/usr/lib` with
 nothing pointing at them. Harmless, but they accumulate; `clean all` is the
 only thing that removes them.
 
-Built so far, 50 packages:
+Built so far, 60 packages:
 
 | Package | Why it is here |
 | --- | --- |
@@ -331,6 +332,15 @@ Built so far, 50 packages:
 | elfutils | libelf only, which mesa's radeonsi hard-requires |
 | libglvnd | vendor-neutral dispatch: libOpenGL, libEGL and the GLES libraries |
 | mesa | GBM, Vulkan and the GL drivers behind libglvnd; radeonsi and RADV, no LLVM |
+| libpng | PNG surfaces for cairo |
+| freetype | the font engine; built twice, around harfbuzz |
+| fontconfig | turns "monospace 11" into a file on disk |
+| fribidi | the Unicode bidirectional algorithm, which pango requires |
+| pcre2 | glib's regular expressions, and sway's window criteria |
+| glib | GObject, which is pango's type system |
+| harfbuzz | text shaping: ligatures, contextual forms, mark positioning |
+| cairo | 2D drawing; sway's title bars and swaybar are cairo surfaces |
+| pango | text layout, tying all of the above together |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
@@ -390,7 +400,17 @@ have. Under a sysroot that test fails on its own.
 which resolves to the host's `/usr/lib` and is *not* sysroot-relative, so
 `-lelf` and `-lsensors` link against the host's copies whatever `--sysroot`
 says. `AC_CHECK_LIB` and `cc.find_library` therefore still see the build
-machine.
+machine. `LDFLAGS` carries `-L obj/usr/lib` to put the image first in that
+order, which is as far as a native build reaches without a chroot.
+
+**And `-L` does not cover indirect dependencies.** When a program links
+against `libgio`, ld follows `libgio`'s own `DT_NEEDED` to `libmount.so.1` to
+check the symbols it imports — and for *that* search it uses `-rpath-link`,
+`-rpath` and the default directories, never `-L`. So `LDFLAGS` carries
+`-Wl,-rpath-link,obj/usr/lib` as well. Without it, glib built against the
+image's util-linux 2.41.1 and everything linking against glib afterwards
+resolved through the host's 2.39.1, where the function glib had just called
+does not exist.
 
 **Neither are GCC's own headers.** `#include <string>` resolves to the host's
 `/usr/include/c++/15.2.0/string` even under the sysroot, while `#include

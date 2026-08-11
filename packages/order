@@ -155,3 +155,29 @@ libglvnd
 # LLVM, would only ever have been the VM's software renderer, which wlroots
 # already has in pixman.
 mesa
+
+# Tier 5. Text.
+#
+# Nothing before this line can draw a letter. wlroots needs none of it; sway
+# needs all of it, because its title bars and swaybar are cairo surfaces with
+# pango laying out the text.
+#
+# freetype appears twice, under two names. It and harfbuzz depend on each
+# other -- harfbuzz reads fonts through freetype, freetype's autohinter asks
+# harfbuzz which glyphs are related -- so freetype is built once without,
+# harfbuzz against that, and freetype again with. The second pass needs its
+# own script because obj/.packages is keyed on the package name.
+#
+# glib comes before harfbuzz, not after: harfbuzz is built with -Dglib=enabled
+# because pango passes GLib types across the harfbuzz boundary, so harfbuzz
+# needs glib to exist first. glib itself needs only pcre2 and libffi.
+libpng
+freetype
+fontconfig
+fribidi
+pcre2
+glib
+harfbuzz
+freetype-harfbuzz
+cairo
+pango

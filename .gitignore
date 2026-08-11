@@ -67,3 +67,12 @@ src/libinput-*/
 src/mesa-*/
 src/elfutils-*/
 src/libglvnd-*/
+src/libpng-*/
+src/freetype-*/
+src/fontconfig-*/
+src/harfbuzz-*/
+src/fribidi-*/
+src/pcre2-*/
+src/glib-*/
+src/cairo-*/
+src/pango-*/
