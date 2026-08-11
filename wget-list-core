@@ -13,15 +13,19 @@
 # starting point if the self-hosting toolchain ever gets built. Fetch it with
 # ./download.sh --list wget-list-sysv.
 #
-# Four things the build needs are not here, because they do not come from a
-# tarball: the kernel and pboot are git checkouts under src/, and src/musl
-# and src/bash were unpacked by hand and have no recorded origin.
+# Two things the build needs are not here, because they do not come from a
+# tarball: the kernel and pboot are git checkouts under src/. src/musl is a
+# third, unpacked by hand, with no recorded origin.
 
 # the C libraries. glibc first: udev is part of systemd and systemd does not
 # build against musl, so both are installed and every binary names the one
 # it wants.
 https://ftpmirror.gnu.org/glibc/glibc-2.42.tar.xz
 https://www.linuxfromscratch.org/patches/lfs/12.4/glibc-2.42-fhs-1.patch
+
+# the shell. Static against musl, so the login path -- pinit execs plogin,
+# plogin execs this -- does not depend on the loader.
+https://ftpmirror.gnu.org/bash/bash-5.3.tar.gz
 
 # the shell utilities
 https://ftpmirror.gnu.org/coreutils/coreutils-9.7.tar.xz

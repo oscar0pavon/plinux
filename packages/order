@@ -10,6 +10,12 @@
 glibc
 
 musl
+
+# the shell. Static against musl, so it is the one binary in the image that
+# does not depend on the loader or on any library being staged correctly --
+# which matters because pinit execs plogin and plogin execs this.
+bash
+
 coreutils
 
 # the text tools every shell script reaches for. musl, like coreutils:

@@ -17,7 +17,7 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and thirty-two packages, which is enough for a console system that
+prefers it; and thirty-three packages, which is enough for a console system that
 can partition a disk, repair its own filesystems, join a wireless network and
 edit its own configuration. There is no service manager, no package manager,
 and no toolchain in the image — packages are compiled on the host and staged
@@ -41,8 +41,8 @@ git clone https://github.com/oscar0pavon/plinux
 cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
 ./download.sh            # fetch the console system's sources into sources/
-./build.sh packages      # the 32 packages in packages/order, into obj/
-./build.sh               # pboot, kernel, pinit, pgetty, plogin, bash
+./build.sh packages      # the 33 packages in packages/order, into obj/
+./build.sh               # pboot, kernel, pinit, pgetty, plogin
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
 ./run                    # boot it
@@ -74,7 +74,6 @@ Third-party sources live in `src/` alongside them:
 | Source | Version | Notes |
 | --- | --- | --- |
 | linux | mainline | cloned by `./configure`, configured from `sys/kernel_config` |
-| bash | 5.3 | static against musl, with bash's bundled termcap |
 | musl | 1.2.5 | libc for every `p*` component and bash |
 | glibc | 2.42 | staged into the image for dynamically linked binaries |
 
@@ -114,7 +113,7 @@ and why they run in that order:
 kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
 no package will compile without them.
 
-**`./download.sh`** fetches the thirty-four tarballs and patches in
+**`./download.sh`** fetches the thirty-five tarballs and patches in
 `wget-list-core`. Nothing else is fetched by default; see [Downloading
 sources](#downloading-sources).
 
@@ -125,7 +124,7 @@ rather than starting over. This is the long step, about 40 minutes on 32
 threads.
 
 **`./build.sh`** builds this project's own components — pboot, the kernel,
-pinit, pgetty, plogin and bash — and stages `sys/` on top. It is a separate
+pinit, pgetty and plogin — and stages `sys/` on top. It is a separate
 step from `packages` on purpose: the components change often and rebuild in
 minutes, the packages almost never change.
 
@@ -247,9 +246,8 @@ as `wget-list-sysv` and put it beside the script to enable `verify`. It lists
 only the book's tarballs, so `wget-list-gui` goes unverified; several of those
 are generated archive URLs with no stable checksum to record anyway.
 
-Two things have no recorded origin at all: `src/musl` and `src/bash` were
-unpacked by hand and are in no list, unlike `src/linux` and `src/pboot`, which
-`./configure` clones.
+One thing has no recorded origin: `src/musl` was unpacked by hand and is in no
+list, unlike `src/linux` and `src/pboot`, which `./configure` clones.
 
 ## Packages
 
@@ -281,12 +279,13 @@ paths. Everything installs with `DESTDIR=obj`, never into the host. A package
 that completes leaves a stamp in `obj/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
-Built so far, 32 packages:
+Built so far, 33 packages:
 
 | Package | Why it is here |
 | --- | --- |
 | glibc | udev is part of systemd, which does not build against musl |
 | musl | libc for the `p*` components and bash |
+| bash | the shell, static against musl so the login path does not depend on the loader |
 | coreutils | ls, cp, mkdir and the rest |
 | sed, grep, gawk, findutils, diffutils | the text tools every shell script reaches for |
 | gzip, tar | without these the image cannot unpack anything, including its own sources |
@@ -593,5 +592,5 @@ pdftotext -layout docs/LFS-BOOK-12.4.pdf docs/LFS-BOOK-12.4.txt
 ## Licensing
 
 pgetty derives from mingetty and is GPLv2; see `src/pgetty/COPYING`.
-`src/bash/build_static.sh` is adapted from robxu9/bash-static (MIT).
+`packages/bash.sh` is adapted from robxu9/bash-static (MIT).
 Third-party trees under `src/` keep their own licenses.

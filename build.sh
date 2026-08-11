@@ -918,24 +918,11 @@ if have_source "Building login" ${src_directory}/plogin; then
   popd
 fi
 
-if have_source "Building bash" ${src_directory}/bash; then
-  pushd ${src_directory}/bash
-  # Static against musl, with bash's bundled termcap. A dynamic bash would pull
-  # in libncursesw.so.6, which nothing in src/ builds.
-  if run bash ./build_static.sh; then
-    if stage bash ${build_directory}/usr/bin/bash; then
-      # Every script in sys/scripts starts #!/bin/sh, and so does most of what
-      # will ever be written for this system. Without this they do not fail at
-      # the first command, they fail to execute at all.
-      ln -sf bash ${build_directory}/usr/bin/sh
-    else
-      failed=$((failed + 1))
-    fi
-  else
-    failed=$((failed + 1))
-  fi
-  popd
-fi
+# bash is a package now, in packages/order. It was a component here, and the
+# component steps have no stamps: every ./build.sh reran build_static.sh,
+# which began by throwing away its own objects, so bash reconfigured and
+# recompiled from zero each time. That was seventeen seconds of a
+# twenty-five-second no-op build, for a tree that never changes.
 
 
 # glibc is built by packages/glibc.sh, from the tarball download.sh fetches.
