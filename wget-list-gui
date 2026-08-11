@@ -60,3 +60,18 @@ https://www.freedesktop.org/software/libevdev/libevdev-1.13.4.tar.xz
 # it, but a touchpad on whatever the rescue USB is plugged into might.
 https://bitmath.org/code/mtdev/mtdev-1.1.7.tar.bz2
 https://gitlab.freedesktop.org/libinput/libinput/-/archive/1.30.0/libinput-1.30.0.tar.gz
+
+# Tier 4. mesa, and no LLVM.
+#
+# LLVM is here only if llvmpipe is: radeonsi has not needed it since ACO,
+# the AMD shader compiler Valve wrote for RADV, and mesa switches radeonsi
+# to ACO on its own when LLVM is absent (si_pipe.c, #if !AMD_LLVM_AVAILABLE).
+# llvmpipe is a JIT and cannot exist without one, but in the VM it would be
+# software rendering -- and wlroots already has a software renderer, which is
+# what pixman was built for. The saving is libLLVM, 121M unstripped on this
+# host, and forty minutes of build.
+https://archive.mesa3d.org/mesa-25.2.4.tar.xz
+
+# radeonsi hard-requires libelf: mesa's meson.build errors out without it.
+# elfutils is where libelf comes from.
+https://sourceware.org/ftp/elfutils/0.193/elfutils-0.193.tar.bz2

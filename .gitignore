@@ -64,3 +64,5 @@ src/libxkbcommon-*/
 src/libevdev-*/
 src/mtdev-*/
 src/libinput-*/
+src/mesa-*/
+src/elfutils-*/

@@ -134,3 +134,20 @@ libevdev
 # multitouch protocol. Nothing here does, but the rescue USB may meet one.
 mtdev
 libinput
+
+# Tier 4 prerequisites.
+#
+# gcc-runtime is libstdc++, libgcc_s and libgomp, copied from the host
+# toolchain because building them means building GCC. mesa is the first C++
+# package here, and it enables OpenMP unconditionally. elfutils is here only
+# for libelf, which mesa's meson.build hard-requires for radeonsi.
+gcc-runtime
+elfutils
+
+# Tier 4. mesa: OpenGL, EGL, GBM and Vulkan.
+#
+# radeonsi for the Navi 23, RADV for its Vulkan, and no LLVM -- radeonsi
+# switches to ACO without it, and llvmpipe, the only thing that truly needs
+# LLVM, would only ever have been the VM's software renderer, which wlroots
+# already has in pixman.
+mesa
