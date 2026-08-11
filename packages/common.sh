@@ -51,7 +51,14 @@ fi
 # SYSROOT_DIR then rewrites the -I and -L in what the .pc files print: they
 # were installed saying prefix=/usr, which is true of the image and not of
 # this tree.
-export PKG_CONFIG_LIBDIR=${build_directory}/usr/lib/pkgconfig
+#
+# Both directories, because pkg-config's own default is both. Anything
+# architecture-independent installs to share/pkgconfig rather than
+# lib/pkgconfig -- wayland-protocols is data only and does exactly that, and
+# so do kmod.pc and udev.pc. With only lib/pkgconfig here they are invisible,
+# and "dependency('wayland-protocols')" fails in a stack where every package
+# after wayland asks for it.
+export PKG_CONFIG_LIBDIR=${build_directory}/usr/lib/pkgconfig:${build_directory}/usr/share/pkgconfig
 export PKG_CONFIG_SYSROOT_DIR=${build_directory}
 
 # The same rule for everything that does not go through pkg-config, which is
@@ -78,6 +85,41 @@ if [ "${plinux_sysroot}" != "none" ]; then
   export CXXFLAGS="${CXXFLAGS} --sysroot=${plinux_sysroot}"
   export LDFLAGS="${LDFLAGS:-} --sysroot=${plinux_sysroot}"
 fi
+
+# Configure a meson package into a build directory inside its source tree.
+#
+# The reason this is a helper and not four copies of a command line is
+# --libdir. Meson does not default it to "lib": on x86_64 it looks at the
+# *build machine* and picks "lib64" if /usr/lib64 exists there as a real
+# directory. This host grew one, so meson started installing into
+# obj/usr/lib64 -- a directory the image does not have and nothing searches,
+# with the .pc files going to obj/usr/lib64/pkgconfig where PKG_CONFIG_LIBDIR
+# does not look either. The package installs, and the next one cannot find it.
+#
+# dbus only escaped because it was built before that directory appeared on the
+# host. That is the worst kind of bug: correct on one machine, wrong on the
+# same machine a week later, and silent both times. Naming libdir explicitly
+# makes it depend on nothing.
+#
+# --wrap-mode=nodownload because a missing dependency should be a build
+# failure, not meson quietly fetching a copy from the network and building a
+# private one into the image.
+#
+# The build directory is removed first: meson refuses to reconfigure one whose
+# options have changed, and these scripts are re-run after every failure.
+meson_setup(){
+  local build_dir=$1
+  shift
+
+  rm -rf "${build_dir}"
+
+  meson setup "${build_dir}"       \
+        --prefix=/usr              \
+        --libdir=lib               \
+        --buildtype=release        \
+        --wrap-mode=nodownload     \
+        "$@"
+}
 
 # Unpack an archive from sources/ into src/ unless it is already there, and
 # print where it landed. Progress goes to stderr so the path stays usable.

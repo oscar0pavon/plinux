@@ -52,3 +52,6 @@ src/vim-*/
 src/less-*/
 src/tzdata*/
 src/bash-*/
+src/libffi-*/
+src/wayland-*/
+src/seatd-*/

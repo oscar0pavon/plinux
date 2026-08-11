@@ -17,9 +17,10 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and thirty-three packages, which is enough for a console system that
-can partition a disk, repair its own filesystems, join a wireless network and
-edit its own configuration. There is no service manager, no package manager,
+prefers it; and thirty-seven packages. Thirty-three of them make a console
+system that can partition a disk, repair its own filesystems, join a wireless
+network and edit its own configuration; the other four are the first tier of
+the Wayland stack. There is no service manager, no package manager,
 and no toolchain in the image — packages are compiled on the host and staged
 into `obj/`, which becomes the root filesystem.
 
@@ -40,8 +41,8 @@ system is a console system until it lands.
 git clone https://github.com/oscar0pavon/plinux
 cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
-./download.sh            # fetch the console system's sources into sources/
-./build.sh packages      # the 33 packages in packages/order, into obj/
+./download.sh all        # fetch every source into sources/
+./build.sh packages      # the 37 packages in packages/order, into obj/
 ./build.sh               # pboot, kernel, pinit, pgetty, plogin
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
@@ -113,9 +114,11 @@ and why they run in that order:
 kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
 no package will compile without them.
 
-**`./download.sh`** fetches the thirty-five tarballs and patches in
-`wget-list-core`. Nothing else is fetched by default; see [Downloading
-sources](#downloading-sources).
+**`./download.sh all`** fetches both lists: the thirty-five tarballs and
+patches of `wget-list-core`, and the four of `wget-list-gui`. Plain
+`./download.sh` takes only the core, which is enough for a console system but
+not for `packages/order` as it now stands — that ends with the Wayland tier.
+See [Downloading sources](#downloading-sources).
 
 **`./build.sh packages`** walks `packages/order` from the top, running one
 script per package, each installing with `DESTDIR=obj`. A package that
@@ -279,7 +282,7 @@ paths. Everything installs with `DESTDIR=obj`, never into the host. A package
 that completes leaves a stamp in `obj/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
-Built so far, 33 packages:
+Built so far, 37 packages:
 
 | Package | Why it is here |
 | --- | --- |
@@ -305,6 +308,10 @@ Built so far, 33 packages:
 | expat | XML parsing, which dbus reads its configuration with |
 | dbus | the message bus; iwd will not start without one |
 | iwd | wireless; `init_os` starts it through `set_ip` |
+| libffi | wayland dispatches protocol calls through it |
+| wayland | the protocol libraries, and wayland-scanner, which is a build tool |
+| wayland-protocols | XML only; xdg-shell is how a client gets a window |
+| seatd | hands out the DRM and input devices, so sway need not be root |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
@@ -317,8 +324,7 @@ names the one it was linked against. musl installs its libraries in
 a linker script under that name — sharing a directory means one destroys the
 other.
 
-Still to come is the Wayland stack, in tiers: libffi, wayland,
-wayland-protocols and seatd; then libdrm, pixman, libxkbcommon with
+Still to come is the rest of the Wayland stack: libdrm, pixman, libxkbcommon with
 xkeyboard-config, libevdev, hwdata and libdisplay-info; then libinput; then
 llvm and mesa; then the text stack, freetype through pango; then json-c,
 wlroots and sway. Everything in it is built against glibc, not musl: mesa and

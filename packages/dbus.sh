@@ -23,19 +23,19 @@ cd "${directory}"
 # glibc, like the rest of the udev/iwd chain
 export CC=gcc
 
-mkdir -p build
-cd build
-
 # systemd and x11_autolaunch are disabled because neither exists here; without
 # that, meson finds the host's and links against them.
 #
 # The socket paths are set explicitly rather than left to the localstatedir
 # default, which would put the system socket under /var/run.
-meson setup --prefix=/usr \
+#
+# meson_setup rather than a bare meson: this installed into /usr/lib only
+# because it was built before the host grew a /usr/lib64, which is what meson
+# keys its libdir default off. The helper names libdir instead of leaving it
+# to the build machine.
+meson_setup build \
             --sysconfdir=/etc \
             --localstatedir=/var \
-            .. \
-            --buildtype=release \
             -D dbus_user=messagebus \
             -D message_bus=true \
             -D system_socket=/run/dbus/system_bus_socket \
@@ -48,9 +48,9 @@ meson setup --prefix=/usr \
             -D ducktype_docs=disabled \
             -D xml_docs=disabled
 
-ninja
+ninja -C build
 
-DESTDIR="${build_directory}" ninja install
+DESTDIR="${build_directory}" ninja -C build install
 
 # dbus-daemon --system creates its socket here and drops to the messagebus
 # user; the directory has to exist for either to work. pinit mounts a tmpfs on

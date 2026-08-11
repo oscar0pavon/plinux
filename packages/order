@@ -97,3 +97,16 @@ dbus
 # wireless. init_os starts it through set_ip; it associates and applies the
 # address itself over rtnetlink. Bundles ell, so there is no separate package.
 iwd
+
+# The Wayland stack, tier 1. Everything from here down is built against
+# glibc, not musl: mesa and llvm are not realistically musl-buildable here
+# and a stack cannot be split between two C libraries.
+#
+# libffi first -- wayland's protocol dispatch calls through it. wayland is
+# the client and server libraries plus wayland-scanner, which is a build
+# tool this machine runs. wayland-protocols is XML only. seatd hands out the
+# DRM and input devices, which is what lets sway run without being root.
+libffi
+wayland
+wayland-protocols
+seatd
