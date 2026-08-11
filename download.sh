@@ -8,7 +8,18 @@
 
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
-list=${LFS_LIST:-wget-list-sysv}
+# Split by what gets built, not by which book a package came from.
+#
+# wget-list-core is the console system, one line per entry in packages/order.
+# wget-list-gui is the Wayland stack on top of it. wget-list-sysv is the LFS
+# book's own list, still here but no longer downloaded by default: about
+# sixty of its ninety-one entries are the chapter 5 and 6 temporary
+# toolchain, which plinux does not build because it compiles against the host
+# toolchain and stages into obj/. Fetching it costs several hundred megabytes
+# that nothing unpacks. It stays in the tree as the starting point if the
+# self-hosting toolchain is ever built: ./download.sh --list wget-list-sysv.
+list_core=${CORE_LIST:-wget-list-core}
+list_gui=${GUI_LIST:-wget-list-gui}
 sources=${LFS_SOURCES:-sources}
 sums=${LFS_SUMS:-md5sums}
 failed_log=${sources}/.failed
@@ -17,27 +28,42 @@ timeout=${LFS_TIMEOUT:-30}
 
 usage(){
   cat <<'USAGE'
-Usage: ./download.sh [command]
+Usage: ./download.sh [command] [--list FILE]
 
-Downloads the sources listed in wget-list-sysv into sources/.
+Downloads the sources the build needs into sources/.
 
 Commands:
-  (none)      Download everything still missing. Already complete files are
+  (none)      wget-list-core, the console system. Already complete files are
               skipped, partial ones are resumed
+  gui         wget-list-gui, the Wayland stack, on its own
+  all         Both of the above
   verify      Check sources/ against md5sums, if that file is present
   retry       Download only the entries that failed on the last run
   help        This message
 
+Options:
+  --list FILE  Download this list instead. Repeatable. This is how to fetch
+               wget-list-sysv, the LFS book's own list, which is not part of
+               any command because roughly sixty of its entries are the
+               temporary toolchain plinux does not build
+
 Environment:
-  LFS_LIST     list of URLs            (default wget-list-sysv)
-  LFS_SOURCES  download directory      (default sources)
-  LFS_SUMS     checksum file           (default md5sums)
-  LFS_TRIES    attempts per file       (default 3)
-  LFS_TIMEOUT  seconds per attempt     (default 30)
+  CORE_LIST    console system list      (default wget-list-core)
+  GUI_LIST     Wayland stack list       (default wget-list-gui)
+  LFS_SOURCES  download directory       (default sources)
+  LFS_SUMS     checksum file            (default md5sums)
+  LFS_TRIES    attempts per file        (default 3)
+  LFS_TIMEOUT  seconds per attempt      (default 30)
+
+A line is a URL, optionally followed by a filename to save it as. Forge
+archive URLs end in the tag rather than the project, so seatd would
+otherwise arrive as "0.9.1.tar.gz".
 
 The md5sums file is not part of this repository. Fetch it from the same
 release of the book as wget-list-sysv and place it beside this script to
-enable verify.
+enable verify. It lists only the book's tarballs, so anything in
+wget-list-gui goes unverified, and several of those have no stable checksum
+to record in the first place.
 
 Exit status is 0 only when every file was obtained.
 USAGE
@@ -82,7 +108,9 @@ download(){
   local input=$1
   local total ok skipped bad url name tmp_failed
 
-  total=$(grep -cve '^[[:space:]]*$' "${input}")
+  # comments as well as blank lines, or the [n/total] counter reads short
+  # against a list that explains itself
+  total=$(grep -cve '^[[:space:]]*$' -e '^[[:space:]]*#' "${input}")
   ok=0
   skipped=0
   bad=0
@@ -93,12 +121,19 @@ download(){
   tmp_failed=$(mktemp) || return 1
 
   local n=0
-  while read -r url; do
+  local rename
+  while read -r url rename; do
     # tolerate blank lines and comments in a hand-edited list
     case "${url}" in ''|\#*) continue ;; esac
 
     n=$((n + 1))
-    name=${url##*/}
+
+    # An optional second field renames the file. Forge archive URLs end in
+    # the tag rather than the project, so seatd arrives as "0.9.1.tar.gz" --
+    # which says nothing in sources/ and matches nothing when a package
+    # script looks for seatd-*.tar.gz. The tarball itself is fine; only the
+    # URL's last component is useless.
+    name=${rename:-${url##*/}}
 
     if [ -s "${sources}/${name}" ]; then
       printf '[%3d/%3d] have %s\n' "${n}" "${total}" "${name}"
@@ -108,13 +143,24 @@ download(){
 
     printf '[%3d/%3d] get  %s\n' "${n}" "${total}" "${name}"
 
+    # --continue only without a rename: wget refuses to resume into an
+    # explicit -O target, and these archive URLs are small enough that
+    # restarting one costs nothing.
     fetch(){
-      wget --continue \
-           --tries="${tries}" \
-           --timeout="${timeout}" \
-           --quiet --show-progress \
-           --directory-prefix="${sources}" \
-           "$1"
+      if [ -n "${rename}" ]; then
+        wget --tries="${tries}" \
+             --timeout="${timeout}" \
+             --quiet --show-progress \
+             -O "${sources}/${name}" \
+             "$1"
+      else
+        wget --continue \
+             --tries="${tries}" \
+             --timeout="${timeout}" \
+             --quiet --show-progress \
+             --directory-prefix="${sources}" \
+             "$1"
+      fi
     }
 
     alternate=$(fallback_url "${url}")
@@ -126,7 +172,8 @@ download(){
       ok=$((ok + 1))
     else
       echo "  FAILED ${url}" >&2
-      echo "${url}" >> "${tmp_failed}"
+      # the rename goes into the log too, so retry parses it the same way
+      echo "${url} ${rename}" >> "${tmp_failed}"
       bad=$((bad + 1))
       # a failed transfer leaves a stub that would look complete next run
       [ -s "${sources}/${name}" ] || rm -f "${sources}/${name}"
@@ -146,23 +193,47 @@ download(){
   return 0
 }
 
-case "${1:-}" in
-  help|-h|--help)
-    usage
-    exit 0
-    ;;
-  verify)
-    verify
-    exit $?
-    ;;
-  ''|retry)
-    ;;
-  *)
-    echo "unknown command: $1" >&2
-    echo >&2
-    usage >&2
-    exit 1
-    ;;
+wanted=()
+command=
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --list)
+      if [ -z "${2:-}" ]; then
+        echo "--list needs a file" >&2
+        exit 1
+      fi
+      wanted+=("$2")
+      shift 2
+      ;;
+    help|-h|--help)
+      usage
+      exit 0
+      ;;
+    verify)
+      verify
+      exit $?
+      ;;
+    gui|all|retry)
+      command=$1
+      shift
+      ;;
+    *)
+      echo "unknown command: $1" >&2
+      echo >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+# --list on its own replaces the default rather than adding to it; naming a
+# command as well asks for both.
+case "${command}" in
+  gui)   wanted+=("${list_gui}") ;;
+  all)   wanted+=("${list_core}" "${list_gui}") ;;
+  retry) ;;
+  *)     [ ${#wanted[@]} -eq 0 ] && wanted=("${list_core}") ;;
 esac
 
 if ! command -v wget > /dev/null; then
@@ -175,7 +246,7 @@ if ! mkdir -p "${sources}"; then
   exit 1
 fi
 
-if [ "${1:-}" == "retry" ]; then
+if [ "${command}" == "retry" ]; then
   if [ ! -s "${failed_log}" ]; then
     echo "nothing to retry"
     exit 0
@@ -183,11 +254,22 @@ if [ "${1:-}" == "retry" ]; then
   echo "retrying $(grep -c . "${failed_log}") failed downloads"
   download "${failed_log}" || exit 1
 else
-  if [ ! -f "${list}" ]; then
-    echo "${list} not found" >&2
-    exit 1
-  fi
-  download "${list}" || exit 1
+  for one in "${wanted[@]}"; do
+    if [ ! -f "${one}" ]; then
+      echo "${one} not found" >&2
+      exit 1
+    fi
+  done
+
+  # Joined into one input rather than calling download once per list: it
+  # writes the failed log at the end of a run, so a second call would replace
+  # the first list's failures instead of adding to them, and "retry" would
+  # then skip them silently.
+  joined=$(mktemp) || exit 1
+  trap 'rm -f "${joined}"' EXIT
+  cat "${wanted[@]}" > "${joined}"
+
+  download "${joined}" || exit 1
 fi
 
 verify

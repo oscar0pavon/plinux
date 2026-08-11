@@ -1,0 +1,81 @@
+# The sources plinux actually builds. One line per entry in packages/order,
+# in the same order.
+#
+# This is not the LFS list. wget-list-sysv is the book's own file and is 91
+# entries, of which about sixty are the temporary toolchain -- gcc, binutils,
+# gmp, mpfr, mpc, m4, make, perl, python, tcl, expect, autoconf, libtool,
+# texinfo -- that LFS builds in chapters 5 and 6 so that chapter 8 can be
+# built inside a chroot. plinux does none of that: it builds against the host
+# toolchain and stages into obj/, so downloading those tarballs fetches
+# several hundred megabytes that nothing ever unpacks.
+#
+# wget-list-sysv is kept in the tree, unused by default, because it is the
+# starting point if the self-hosting toolchain ever gets built. Fetch it with
+# ./download.sh --list wget-list-sysv.
+#
+# Four things the build needs are not here, because they do not come from a
+# tarball: the kernel and pboot are git checkouts under src/, and src/musl
+# and src/bash were unpacked by hand and have no recorded origin.
+
+# the C libraries. glibc first: udev is part of systemd and systemd does not
+# build against musl, so both are installed and every binary names the one
+# it wants.
+https://ftpmirror.gnu.org/glibc/glibc-2.42.tar.xz
+https://www.linuxfromscratch.org/patches/lfs/12.4/glibc-2.42-fhs-1.patch
+
+# the shell utilities
+https://ftpmirror.gnu.org/coreutils/coreutils-9.7.tar.xz
+https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-i18n-1.patch
+https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-upstream_fix-1.patch
+https://ftpmirror.gnu.org/sed/sed-4.9.tar.xz
+https://ftpmirror.gnu.org/grep/grep-3.12.tar.xz
+https://ftpmirror.gnu.org/gawk/gawk-5.3.2.tar.xz
+https://ftpmirror.gnu.org/findutils/findutils-4.10.0.tar.xz
+https://ftpmirror.gnu.org/diffutils/diffutils-3.12.tar.xz
+
+# the archiver and the compressor
+https://ftpmirror.gnu.org/gzip/gzip-1.14.tar.xz
+https://ftpmirror.gnu.org/tar/tar-1.35.tar.xz
+
+# the compression libraries kmod reads modules with. All three are hard
+# dependencies of kmod whether or not a given module is compressed.
+https://zlib.net/fossils/zlib-1.3.1.tar.gz
+https://github.com/tukaani-project/xz/releases/download/v5.8.1/xz-5.8.1.tar.xz
+https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+
+# udev and what it links against. The udev sources are inside the systemd
+# tarball; only the udev half is built.
+https://www.kernel.org/pub/linux/utils/util-linux/v2.41/util-linux-2.41.1.tar.xz
+https://download.savannah.gnu.org/releases/attr/attr-2.5.2.tar.gz
+https://download.savannah.gnu.org/releases/acl/acl-2.3.2.tar.xz
+https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.76.tar.xz
+https://github.com/openssl/openssl/releases/download/openssl-3.5.2/openssl-3.5.2.tar.gz
+https://www.kernel.org/pub/linux/utils/kernel/kmod/kmod-34.2.tar.xz
+https://github.com/systemd/systemd/archive/v257.8/systemd-257.8.tar.gz
+
+# terminal handling, and the password hashing plogin needs
+https://ftpmirror.gnu.org/ncurses/ncurses-6.5.tar.gz
+https://ftpmirror.gnu.org/readline/readline-8.3.tar.gz
+https://github.com/besser82/libxcrypt/releases/download/v4.4.38/libxcrypt-4.4.38.tar.xz
+
+# the editor and the pager
+https://github.com/vim/vim/archive/v9.1.1629/vim-9.1.1629.tar.gz
+https://www.greenwoodsoftware.com/less/less-679.tar.gz
+
+# the timezone database
+https://www.iana.org/time-zones/repository/releases/tzdata2025b.tar.gz
+
+# the filesystem tools. e2fsprogs for the root filesystem, dosfstools for the
+# EFI system partition -- build.sh usb needs mkfs.fat.
+https://downloads.sourceforge.net/project/e2fsprogs/e2fsprogs/v1.47.3/e2fsprogs-1.47.3.tar.gz
+https://github.com/dosfstools/dosfstools/releases/download/v4.2/dosfstools-4.2.tar.gz
+
+# process monitoring
+https://sourceforge.net/projects/procps-ng/files/Production/procps-ng-4.0.5.tar.xz
+
+# the message bus and the XML parser it reads its configuration with
+https://github.com/libexpat/libexpat/releases/download/R_2_7_1/expat-2.7.1.tar.xz
+https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz
+
+# wireless. init_os starts it through set_ip.
+https://mirrors.edge.kernel.org/pub/linux/network/wireless/iwd-3.12.tar.xz

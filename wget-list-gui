@@ -1,0 +1,35 @@
+# The Wayland stack, on top of wget-list-core.
+#
+# Separate from the core list because it is a different kind of commitment:
+# the core is thirty-odd packages that make a console system, this is the
+# twenty-odd that a compositor needs, and most of the time there is no reason
+# to fetch it. ./download.sh gui takes only this one.
+#
+# Everything here is built against glibc, not musl. Mesa and LLVM are not
+# realistically musl-buildable here, and a stack cannot be split between two
+# C libraries, so the whole thing follows udev's lead.
+#
+# Not covered by md5sums, which is the LFS book's file and lists only the
+# book's tarballs. Some of these have no stable checksum worth recording
+# anyway: forge archive URLs are generated per request and have changed bytes
+# without changing contents.
+#
+# An optional second field renames the downloaded file. Forge archive URLs
+# end in the tag rather than the project, so without it seatd would land in
+# sources/ as "0.9.1.tar.gz".
+#
+# Ordered the way they get built, which is dependency order.
+
+# Tier 1.
+#
+# libffi is what wayland's protocol dispatch calls its callbacks through; it
+# is an LFS package, but plinux never had a reason to build it until now.
+# wayland is the protocol library and wayland-scanner. wayland-protocols is
+# data only, the XML that the compositor and its clients generate code from.
+# seatd hands out the DRM and input devices, which is what lets sway run
+# without being root -- init_os already starts it if it is present, and
+# shell_config.sh already sets LIBSEAT_BACKEND=seatd.
+https://github.com/libffi/libffi/releases/download/v3.5.2/libffi-3.5.2.tar.gz
+https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.24.0/downloads/wayland-1.24.0.tar.xz
+https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.45/downloads/wayland-protocols-1.45.tar.xz
+https://git.sr.ht/~kennylevinsen/seatd/archive/0.9.1.tar.gz  seatd-0.9.1.tar.gz
