@@ -181,3 +181,15 @@ harfbuzz
 freetype-harfbuzz
 cairo
 pango
+
+# Tier 6. The compositor.
+#
+# json-c is sway's IPC format. wlroots is the compositor library and sway is
+# the window manager on top of it; their versions are pinned to each other,
+# sway 1.11 asking for wlroots-0.19. dejavu-fonts last, because fontconfig,
+# pango and cairo can all be installed and still draw nothing without a font
+# file to draw from.
+json-c
+wlroots
+sway
+dejavu-fonts

@@ -76,3 +76,7 @@ src/pcre2-*/
 src/glib-*/
 src/cairo-*/
 src/pango-*/
+src/json-c-*/
+src/wlroots-*/
+src/sway-*/
+src/dejavu-fonts-*/

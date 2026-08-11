@@ -105,3 +105,19 @@ https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.46/pcre2-10.46.
 https://download.gnome.org/sources/glib/2.86/glib-2.86.0.tar.xz
 https://www.cairographics.org/releases/cairo-1.18.4.tar.xz
 https://download.gnome.org/sources/pango/1.56/pango-1.56.4.tar.xz
+
+# Tier 6. The compositor.
+#
+# json-c is sway's IPC format, the thing swaymsg speaks. wlroots is the
+# compositor library -- DRM output, libinput devices, the GLES2 renderer, the
+# Wayland protocol implementations -- and sway is a window manager written on
+# top of it. The versions are pinned to each other: sway 1.11's meson.build
+# asks for wlroots-0.19, ">=0.19.0, <0.20.0".
+#
+# dejavu is a font. Without one, fontconfig's cache is empty and every piece
+# of text pango lays out renders as boxes, so the compositor comes up and
+# says nothing.
+https://github.com/json-c/json-c/archive/json-c-0.18-20240915/json-c-0.18-20240915.tar.gz  json-c-0.18.tar.gz
+https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.19.1/wlroots-0.19.1.tar.gz
+https://github.com/swaywm/sway/releases/download/1.11/sway-1.11.tar.gz
+https://downloads.sourceforge.net/dejavu/dejavu-fonts-ttf-2.37.tar.bz2

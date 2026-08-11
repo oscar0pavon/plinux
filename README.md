@@ -17,10 +17,10 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and sixty packages. Thirty-three of them make a console
+prefers it; and sixty-four packages. Thirty-three of them make a console
 system that can partition a disk, repair its own filesystems, join a wireless
-network and edit its own configuration; the other twenty-seven are the
-Wayland stack so far, which does not reach a compositor yet. There is no service manager, no package manager,
+network and edit its own configuration; the other thirty-one are the Wayland
+stack, which now reaches sway. There is no service manager, no package manager,
 and no toolchain in the image — packages are compiled on the host and staged
 into `obj/`, which becomes the root filesystem.
 
@@ -32,8 +32,8 @@ there changes the workstation and the next image at the same time.
 The three ways to run it: `./run` boots the image under QEMU, `build.sh usb`
 writes it to a USB stick as a bootable rescue system that carries its own
 identifiers, and `build.sh` plus the `pboot` install steps put it on real
-hardware. The Wayland stack — wlroots and sway — is the work in progress; the
-system is a console system until it lands.
+hardware. The Wayland stack now reaches sway, though it has been built and not yet
+run.
 
 ## Getting it
 
@@ -42,7 +42,7 @@ git clone https://github.com/oscar0pavon/plinux
 cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
 ./download.sh all        # fetch every source into sources/
-./build.sh packages      # the 60 packages in packages/order, into obj/
+./build.sh packages      # the 64 packages in packages/order, into obj/
 ./build.sh               # pboot, kernel, pinit, pgetty, plogin
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
@@ -115,7 +115,7 @@ kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
 no package will compile without them.
 
 **`./download.sh all`** fetches both lists: the thirty-five tarballs and
-patches of `wget-list-core`, and the 25 of `wget-list-gui`. Plain
+patches of `wget-list-core`, and the 29 of `wget-list-gui`. Plain
 `./download.sh` takes only the core, which is enough for a console system but
 not for `packages/order` as it now stands — that ends with the Wayland tier.
 See [Downloading sources](#downloading-sources).
@@ -289,7 +289,7 @@ its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `obj/usr/lib` with
 nothing pointing at them. Harmless, but they accumulate; `clean all` is the
 only thing that removes them.
 
-Built so far, 60 packages:
+Built so far, 64 packages:
 
 | Package | Why it is here |
 | --- | --- |
@@ -341,6 +341,10 @@ Built so far, 60 packages:
 | harfbuzz | text shaping: ligatures, contextual forms, mark positioning |
 | cairo | 2D drawing; sway's title bars and swaybar are cairo surfaces |
 | pango | text layout, tying all of the above together |
+| json-c | sway's IPC format, which swaymsg speaks |
+| wlroots | the compositor library: DRM output, libinput devices, GLES2 rendering |
+| sway | the compositor itself |
+| dejavu-fonts | a font, without which every label renders as a box |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
