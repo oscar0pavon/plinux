@@ -33,3 +33,20 @@ https://github.com/libffi/libffi/releases/download/v3.5.2/libffi-3.5.2.tar.gz
 https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.24.0/downloads/wayland-1.24.0.tar.xz
 https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.45/downloads/wayland-protocols-1.45.tar.xz
 https://git.sr.ht/~kennylevinsen/seatd/archive/0.9.1.tar.gz  seatd-0.9.1.tar.gz
+
+# Tier 2. The device and input layer, all of it below the compositor.
+#
+# libdrm is how anything talks to the kernel's DRM: mode setting, buffer
+# allocation, the amdgpu ioctls. pixman is the software rasteriser wlroots
+# falls back to when there is no GPU, which is what makes sway run in the VM.
+# hwdata carries pnp.ids, the monitor manufacturer table libdisplay-info
+# parses EDID against. xkeyboard-config is the keyboard layout data --
+# "us" and "latam" are files in it -- and libxkbcommon is what reads it.
+# libevdev wraps the kernel's input event protocol for libinput in tier 3.
+https://dri.freedesktop.org/libdrm/libdrm-2.4.126.tar.xz
+https://www.cairographics.org/releases/pixman-0.46.4.tar.gz
+https://github.com/vcrhonek/hwdata/archive/v0.402/hwdata-0.402.tar.gz
+https://gitlab.freedesktop.org/emersion/libdisplay-info/-/archive/0.3.0/libdisplay-info-0.3.0.tar.gz
+https://www.x.org/pub/individual/data/xkeyboard-config/xkeyboard-config-2.45.tar.xz
+https://github.com/xkbcommon/libxkbcommon/archive/xkbcommon-1.11.0/libxkbcommon-xkbcommon-1.11.0.tar.gz  libxkbcommon-1.11.0.tar.gz
+https://www.freedesktop.org/software/libevdev/libevdev-1.13.4.tar.xz

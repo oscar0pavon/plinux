@@ -17,10 +17,10 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and thirty-seven packages. Thirty-three of them make a console
+prefers it; and forty-four packages. Thirty-three of them make a console
 system that can partition a disk, repair its own filesystems, join a wireless
-network and edit its own configuration; the other four are the first tier of
-the Wayland stack. There is no service manager, no package manager,
+network and edit its own configuration; the other eleven are the Wayland stack
+so far, which does not reach a compositor yet. There is no service manager, no package manager,
 and no toolchain in the image — packages are compiled on the host and staged
 into `obj/`, which becomes the root filesystem.
 
@@ -42,7 +42,7 @@ git clone https://github.com/oscar0pavon/plinux
 cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
 ./download.sh all        # fetch every source into sources/
-./build.sh packages      # the 37 packages in packages/order, into obj/
+./build.sh packages      # the 44 packages in packages/order, into obj/
 ./build.sh               # pboot, kernel, pinit, pgetty, plogin
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
@@ -115,7 +115,7 @@ kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
 no package will compile without them.
 
 **`./download.sh all`** fetches both lists: the thirty-five tarballs and
-patches of `wget-list-core`, and the four of `wget-list-gui`. Plain
+patches of `wget-list-core`, and the eleven of `wget-list-gui`. Plain
 `./download.sh` takes only the core, which is enough for a console system but
 not for `packages/order` as it now stands — that ends with the Wayland tier.
 See [Downloading sources](#downloading-sources).
@@ -282,7 +282,7 @@ paths. Everything installs with `DESTDIR=obj`, never into the host. A package
 that completes leaves a stamp in `obj/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
-Built so far, 37 packages:
+Built so far, 44 packages:
 
 | Package | Why it is here |
 | --- | --- |
@@ -312,6 +312,13 @@ Built so far, 37 packages:
 | wayland | the protocol libraries, and wayland-scanner, which is a build tool |
 | wayland-protocols | XML only; xdg-shell is how a client gets a window |
 | seatd | hands out the DRM and input devices, so sway need not be root |
+| libdrm | the userspace side of the kernel's DRM; amdgpu only |
+| pixman | software rasteriser, which is how wlroots renders without a GPU |
+| hwdata | pnp.ids, so a monitor reports a manufacturer and not a three-letter code |
+| libdisplay-info | parses EDID into modes, size and colorimetry |
+| xkeyboard-config | the layout data; `us` and `latam` are files in it |
+| libxkbcommon | turns key codes into symbols, reading the above |
+| libevdev | wraps the kernel input event protocol for libinput |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
@@ -324,12 +331,11 @@ names the one it was linked against. musl installs its libraries in
 a linker script under that name — sharing a directory means one destroys the
 other.
 
-Still to come is the rest of the Wayland stack: libdrm, pixman, libxkbcommon with
-xkeyboard-config, libevdev, hwdata and libdisplay-info; then libinput; then
-llvm and mesa; then the text stack, freetype through pango; then json-c,
-wlroots and sway. Everything in it is built against glibc, not musl: mesa and
-LLVM are not realistically musl-buildable here, and a stack cannot be split
-between two C libraries.
+Still to come is the rest of the Wayland stack: libinput; then llvm and mesa;
+then the text stack, freetype through pango; then json-c, wlroots and sway.
+Everything in it is built against glibc, not musl: mesa and LLVM are not
+realistically musl-buildable here, and a stack cannot be split between two C
+libraries.
 
 Also worth having, none of them on the critical path: psmisc, iproute2,
 iana-etc, kbd, and man-db with groff — nothing in the image can read a man page.

@@ -110,3 +110,20 @@ libffi
 wayland
 wayland-protocols
 seatd
+
+# Tier 2. The device and input layer.
+#
+# libdrm is the userspace side of the kernel's DRM; only the amdgpu driver is
+# built, for the same reason DRM_I915 came out of the kernel config. pixman
+# is the software rasteriser wlroots falls back to, which is what will make
+# sway work in the VM. hwdata before libdisplay-info, which reads pnp.ids
+# from it to name a monitor's manufacturer. xkeyboard-config is the layout
+# data -- "us" and "latam" are files in it -- and libxkbcommon reads it.
+# libevdev wraps the kernel input protocol for libinput in tier 3.
+libdrm
+pixman
+hwdata
+libdisplay-info
+xkeyboard-config
+libxkbcommon
+libevdev
