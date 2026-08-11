@@ -23,19 +23,22 @@ Third-party sources live in `src/` alongside them:
 | musl | 1.2.5 | libc for every `p*` component and bash |
 | glibc | 2.42 | staged into the image for dynamically linked binaries |
 
-The LFS packages built by `./build.sh packages` are unpacked into `src/` too,
-as versioned directories. They are not tracked; `download.sh` fetches the
-tarballs and the package scripts unpack them.
+The packages built by `./build.sh packages` are unpacked into `src/` too, as
+versioned directories. They are not tracked; `download.sh` fetches the tarballs
+and the package scripts unpack them.
 
 ## Layout
 
 ```
-build.sh              build everything into obj/, or stage obj/ into the VM image
+build.sh              build everything into obj/, or write obj/ to a disk
 configure             clone the kernel and pboot, install sys/kernel_config
-download.sh           fetch the LFS tarballs listed in wget-list-sysv
+download.sh           fetch source tarballs into sources/
+wget-list-core        the sources the console system is built from
+wget-list-gui         the Wayland stack, fetched separately
+wget-list-sysv        the LFS book's own list, kept for reference
 run                   symlink to virtual_machine/start.sh
 obj/                  staged root filesystem; becomes / in the image
-packages/             one build script per LFS package, plus the build order
+packages/             one build script per package, plus the build order
 src/                  component sources and third-party trees
 sources/              downloaded tarballs and patches
 sys/                  scripts, dotfiles and /etc content for a running system
@@ -45,16 +48,68 @@ logs/                 per-step build output
 virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 ```
 
-## Building
+## Building from scratch
+
+On a fresh clone, in order:
 
 ```sh
-./configure           # clone the component repos kept outside this tree
-./download.sh         # fetch the LFS tarballs into sources/
-./build.sh help       # all commands
-./build.sh            # full build into obj/
-./build.sh packages   # build the LFS packages into obj/
-./build.sh virt       # copy obj/ into virtual_machine/disk.raw
-./build.sh clean all  # clean sources and delete obj/
+./configure              # clone src/linux and src/pboot, install the kernel config
+./download.sh            # fetch the console system's sources into sources/
+./build.sh packages      # the 32 packages in packages/order, into obj/
+./build.sh               # pboot, kernel, pinit, pgetty, plogin, bash
+./build.sh check         # find binaries whose libraries the image lacks
+sudo ./build.sh virt     # write virtual_machine/disk.raw
+./run                    # boot it
+```
+
+`./configure` has to come first: `download.sh` needs nothing from it, but every
+`build.sh` invocation installs the kernel's userspace API headers out of
+`src/linux`, and the packages will not compile without them.
+
+`packages` before the plain `./build.sh` is not required either way — they
+write into different parts of `obj/` — but it is the useful order, because
+`check` has nothing to say until both have run.
+
+Expect around 40 minutes for the packages on 32 threads, a few minutes for the
+kernel, and an `obj/` of about 450M.
+
+### What the host needs
+
+Packages are compiled by the host toolchain; nothing is cross-compiled and
+there is no chroot. Required:
+
+| Tool | For |
+| --- | --- |
+| `gcc`, `g++` | everything |
+| `musl-gcc` | the `p*` components, bash, and the standalone musl packages |
+| `make`, `perl`, `python3` | package build systems |
+| `meson`, `ninja` | dbus and, later, the whole Wayland stack |
+| `pkgconf` | finding staged libraries |
+| `git`, `wget` | `./configure` and `./download.sh` |
+| `upx` | compressing pboot |
+| `qemu-system-x86_64` | `./run` |
+| `sfdisk`, `mkfs.ext4`, `mkfs.fat` | `build.sh virt` and `build.sh usb` |
+
+Anything built with `musl-gcc` runs its configure tests on the host, so the
+host needs musl's loader present at the path those binaries name:
+
+```sh
+ln -s /musl/lib/libc.so /usr/lib/ld-musl-x86_64.so.1
+```
+
+Without it configure stops at `cannot run C compiled programs`, which reads
+like a broken compiler but is only a missing interpreter.
+
+### build.sh
+
+```sh
+./build.sh help          # all commands
+./build.sh               # this project's own components
+./build.sh packages      # the packages in packages/order
+./build.sh virt          # copy obj/ into virtual_machine/disk.raw
+./build.sh usb /dev/sdX  # write obj/ to a USB disk as a bootable rescue system
+./build.sh check         # find binaries whose libraries are missing
+./build.sh clean all     # clean sources and delete obj/
 ```
 
 Build output is streamed as well as written to `logs/`. Add `quiet` to any
@@ -76,25 +131,58 @@ added since the config was saved instead of prompting.
 `virt` builds nothing, so run a plain `./build.sh` first if any source changed.
 It needs root for `losetup` and `mount`.
 
-Requires `musl-gcc`, `upx`, `gcc`, and `qemu-system-x86_64`. OVMF firmware is
-included as `virtual_machine/uefi.bios`. The packages additionally need
-`meson`, `ninja`, `perl` and `python3`.
+## Downloading sources
 
-Anything built with `musl-gcc` runs its configure tests on the host, so the
-host needs musl's loader present at the path those binaries name:
+Three lists, split by what actually gets built:
+
+| List | Contents |
+| --- | --- |
+| `wget-list-core` | the console system, one line per entry in `packages/order` |
+| `wget-list-gui` | the Wayland stack, on top of the core |
+| `wget-list-sysv` | the LFS 12.4 book's own list, not downloaded by default |
 
 ```sh
-ln -s /musl/lib/libc.so /usr/lib/ld-musl-x86_64.so.1
+./download.sh                          # wget-list-core
+./download.sh gui                      # wget-list-gui
+./download.sh all                      # both
+./download.sh --list wget-list-sysv    # the book's list
+./download.sh retry                    # only the entries that failed last time
+./download.sh verify                   # md5sum -c, if md5sums is present
+./download.sh help
 ```
 
-Without it configure stops at `cannot run C compiled programs`, which reads
-like a broken compiler but is only a missing interpreter.
+`wget-list-sysv` is not what gets fetched, and that is deliberate. Ninety-one
+of its entries are the book's, and about sixty of those are the chapter 5 and 6
+temporary toolchain — gcc, binutils, gmp, mpfr, mpc, m4, make, perl, python,
+tcl, expect, autoconf, libtool, texinfo — which LFS builds so that chapter 8
+can be built inside a chroot. plinux does none of that. It compiles against the
+host toolchain and stages into `obj/`, so those tarballs are several hundred
+megabytes that nothing ever unpacks. The file stays in the tree as the starting
+point if the self-hosting toolchain is ever built.
+
+Each file is fetched separately so a bad mirror is named rather than lost in
+the noise. Complete files are skipped, partial ones resumed, and failures are
+recorded in `sources/.failed` for `retry`. The exit status is 0 only when every
+file was obtained, so it can gate a build script.
+
+A list line is a URL, optionally followed by a name to save it as. Forge
+archive URLs end in the tag rather than the project, so seatd would otherwise
+arrive in `sources/` as `0.9.1.tar.gz`.
+
+`md5sums` is not in this repository. Fetch it from the same release of the book
+as `wget-list-sysv` and put it beside the script to enable `verify`. It lists
+only the book's tarballs, so `wget-list-gui` goes unverified; several of those
+are generated archive URLs with no stable checksum to record anyway.
+
+Two things have no recorded origin at all: `src/musl` and `src/bash` were
+unpacked by hand and are in no list, unlike `src/linux` and `src/pboot`, which
+`./configure` clones.
 
 ## Packages
 
-The userland beyond the `p*` components is built from the LFS packages, one
-script per package in `packages/`. `packages/order` lists them in dependency
-order and `./build.sh packages` walks it from the top.
+The userland beyond the `p*` components is built from source, one script per
+package in `packages/`. `packages/order` lists them in dependency order and
+`./build.sh packages` walks it from the top.
 
 ```sh
 ./build.sh packages          # build whatever is not installed yet
@@ -120,24 +208,31 @@ paths. Everything installs with `DESTDIR=obj`, never into the host. A package
 that completes leaves a stamp in `obj/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
-Built so far:
+Built so far, 32 packages:
 
 | Package | Why it is here |
 | --- | --- |
 | glibc | udev is part of systemd, which does not build against musl |
 | musl | libc for the `p*` components and bash |
 | coreutils | ls, cp, mkdir and the rest |
+| sed, grep, gawk, findutils, diffutils | the text tools every shell script reaches for |
+| gzip, tar | without these the image cannot unpack anything, including its own sources |
+| zlib, xz, zstd | kmod names all three, so without them modprobe cannot start |
 | util-linux | mount, blkid, cfdisk, and libblkid/libmount for udev |
 | attr, acl | libacl, which udev uses to set permissions on device nodes |
 | libcap | libcap, likewise |
 | openssl | libcrypto, likewise |
 | kmod | module loading, and libkmod for udev |
 | udev | device nodes, `/dev/disk/by-uuid`, interface renaming |
+| ncurses, readline, libxcrypt | named by util-linux; without them dmesg, lsblk, fdisk and sulogin cannot start |
+| vim, less | the editor and the pager |
+| tzdata | the timezone database; `/etc/localtime` is America/Asuncion |
+| e2fsprogs | the root filesystem is ext4 and nothing could repair it: util-linux supplies `fsck`, but that is only a dispatcher |
+| dosfstools | the same for the EFI system partition, and `build.sh usb` needs `mkfs.fat` |
+| procps-ng | ps, top, free, pgrep |
 | expat | XML parsing, which dbus reads its configuration with |
 | dbus | the message bus; iwd will not start without one |
-| sed, grep, gawk, findutils | the text tools every shell script reaches for |
-| zlib, xz, zstd | kmod names all three, so without them modprobe cannot start |
-| ncurses, readline, libxcrypt | named by util-linux; without them dmesg, lsblk, fdisk and sulogin cannot start |
+| iwd | wireless; `init_os` starts it through `set_ip` |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
@@ -150,22 +245,57 @@ names the one it was linked against. musl installs its libraries in
 a linker script under that name — sharing a directory means one destroys the
 other.
 
-Still to come, roughly in order: **e2fsprogs**, since the root filesystem is
-ext4 and nothing can repair it — util-linux supplies `fsck`, but that is only
-a dispatcher and the `fsck.ext4` it looks for is not there; **tar** and
-**gzip**, without which the image cannot unpack anything, including its own
-sources; **procps-ng** for `ps`, `top` and `free`, none of which exist yet;
-then diffutils, psmisc, and `less`.
+Still to come is the Wayland stack, in tiers: libffi, wayland,
+wayland-protocols and seatd; then libdrm, pixman, libxkbcommon with
+xkeyboard-config, libevdev, hwdata and libdisplay-info; then libinput; then
+llvm and mesa; then the text stack, freetype through pango; then json-c,
+wlroots and sway. Everything in it is built against glibc, not musl: mesa and
+LLVM are not realistically musl-buildable here, and a stack cannot be split
+between two C libraries.
 
-iproute2 is no longer among them. Nothing in the boot path runs `ip`: pinit
-configures loopback with `SIOCSIFADDR` directly, and iwd sets the wireless
-address over rtnetlink itself. It is still worth having for interactive use,
-but the system now comes up without it.
+Also worth having, none of them on the critical path: psmisc, iproute2,
+iana-etc, kbd, and man-db with groff — nothing in the image can read a man page.
 
-Packages are compiled by the host toolchain and install into `obj/`. Do not
-point `LDFLAGS` at `obj/usr/lib` to pick up a library staged by an earlier
-package: that puts the image's glibc ahead of the host's, and configure's test
-programs then link against a libc that cannot run on the build machine.
+### Building against the image, not the build machine
+
+This is the one thing about the build that is easy to get wrong, because
+getting it wrong looks like success.
+
+These builds run on a workstation that is itself running plinux. A package
+that finds a library or a header in the host's `/usr` therefore links against
+very nearly the right thing, and the build succeeds. The result only fails
+somewhere else — in the VM, or off the rescue USB — and nothing in between
+catches it. `packages/common.sh` closes that off:
+
+```sh
+PKG_CONFIG_LIBDIR=obj/usr/lib/pkgconfig     # replaces the default search path
+PKG_CONFIG_SYSROOT_DIR=obj                  # rewrites the -I and -L it prints
+CFLAGS/CXXFLAGS/LDFLAGS  --sysroot=obj      # everything not using pkg-config
+```
+
+`PKG_CONFIG_LIBDIR` rather than `PKG_CONFIG_PATH`, because `PATH` is searched
+*before* the default directories while `LIBDIR` replaces them: a dependency
+that was never staged is now a configure-time error instead of a silent host
+link. The sysroot covers what pkg-config never sees — `AC_CHECK_HEADER`,
+`AC_CHECK_LIB`, meson's `cc.find_library`, cmake's `find_package`. That is the
+check vim needed and did not have: its configure found the host's GTK3,
+believed it was building a GUI, and produced a binary naming 226 libraries the
+image did not have. Under a sysroot that test fails on its own.
+
+`PLINUX_SYSROOT=none` turns the sysroot off, for bisecting a package that will
+not build. There is no equivalent escape for pkg-config; edit `common.sh`.
+
+This depends on `obj/bin`, `obj/lib`, `obj/lib64` and `obj/sbin` being
+*relative* symlinks — `usr/lib`, not `../../../usr/lib`. Both spell `/usr/lib`
+once the tree is the root filesystem, but only the relative form also resolves
+correctly when the tree is read from the build machine. The `../../..` form
+escapes `obj/` entirely and lands on the host's own `/usr`, which is why `ls
+obj/bin` once reported `tar` and `ps` as installed when neither was.
+
+The kernel's userspace API headers are part of the sysroot and are installed
+into `obj/usr/include` by `build.sh`, refreshed whenever the kernel is
+rebuilt. Before that they were never staged at all, and every package compiled
+against the host's copy.
 
 ## Running
 
@@ -194,6 +324,29 @@ refreshed from the workstation: `CONFIG_DRM_VIRTIO_GPU` for the display, and
 `CONFIG_VIRTIO_NET` for the network — the workstation has no e1000 card, so
 `CONFIG_E1000` is not set and an emulated e1000 would go unclaimed.
 
+## Rescue USB
+
+```sh
+sudo ./build.sh usb /dev/sdX
+```
+
+Writes `obj/` to a USB disk as a self-contained bootable system. The device has
+to be named in full; there is no default, and the command refuses anything that
+is not a whole disk, is the disk the host booted from, or has a filesystem
+mounted. It then asks for `ERASE` to be typed, which `USB_YES=1` skips.
+
+The layout is the same as the VM image: GPT, a 256M FAT32 EFI system partition
+and the rest ext4.
+
+The part worth knowing is what happens after the filesystems are made. A stick
+cannot use the `pboot.conf` and `/etc/fstab` that the VM image uses, because
+those name `/dev/nvme0n1p2` and the VM's UUIDs; booted on another machine they
+would send the kernel looking for that machine's disk. So `usb` reads the
+identifiers back off the device it just partitioned and generates both files
+against them: `root=PARTUUID=` for the kernel, which resolves it natively from
+the GPT with no initramfs, and `UUID=` in `/etc/fstab`, which `mount` resolves
+through libblkid. The stick boots itself, wherever it is plugged in.
+
 ## Boot sequence
 
 ```
@@ -217,6 +370,16 @@ kill -2  1    # SIGINT,  reboot
 kill -12 1    # SIGUSR2, poweroff
 ```
 
+`src/pinit/reboot` and `src/pinit/poweroff` are one-line wrappers around those.
+`make install` in `src/pinit` puts them in `/usr/sbin` on the workstation;
+`build.sh` does not yet stage them into `obj/`, so the image still needs the
+`kill` form.
+
+On shutdown pinit sends every remaining process `SIGTERM`, waits five seconds,
+sends `SIGKILL`, then `swapoff -a`, `umount -a` and a read-only remount of `/`
+before asking the kernel to reboot or power off. Without that last part the
+root filesystem replayed its journal on every boot.
+
 ## pboot.conf
 
 Lives on the EFI system partition next to the kernel. One `n`/`k`/`p` triple per
@@ -234,12 +397,12 @@ Sizes are fixed in `src/pboot/types.h` and are not bounds-checked while parsing:
 names and kernel filenames hold 20 characters, parameters hold 100. A longer
 parameter line overflows into the next entry.
 
-On real hardware prefer `root=PARTUUID=...` over `/dev/nvme0n1p3`. NVMe
-controllers are numbered in the order their probes finish, so with more than one
-drive the name is not stable across boots. The kernel resolves `PARTUUID=` by
-itself; `UUID=` needs an initramfs to resolve it, and there is none here. Add
-`rootwait` so the kernel waits for the device instead of panicking when the
-probe is still in flight.
+On real hardware prefer `root=PARTUUID=...` over `/dev/nvme0n1p3`, which is what
+`build.sh usb` generates. NVMe controllers are numbered in the order their
+probes finish, so with more than one drive the name is not stable across boots.
+The kernel resolves `PARTUUID=` by itself; `UUID=` needs an initramfs to
+resolve it, and there is none here. Add `rootwait` so the kernel waits for the
+device instead of panicking when the probe is still in flight.
 
 ## Disk layout
 
@@ -254,10 +417,9 @@ The guest reaches them as `/dev/nvme0n1p1` and `/dev/nvme0n1p2`, since `run`
 attaches the image through an NVMe controller. The build side is unaffected:
 `build.sh virt` writes the image over a loop device either way.
 
-`/bin`, `/lib`, `/lib64`, `/sbin` and `/var/run` are relative symlinks. They
-dangle when viewed inside `obj/` and resolve correctly once the tree is `/`,
-because `..`
-at `/` is `/`.
+`/bin`, `/lib`, `/lib64`, `/sbin` and `/var/run` are relative symlinks, and
+they resolve both inside `obj/` and once the tree is `/`. That is the point of
+them being relative; see the sysroot section above.
 
 ## Installing pboot on real hardware
 
@@ -272,7 +434,7 @@ efibootmgr --create --disk /dev/nvme0n1 --part 1 -L "pboot" \
 ## Where this project departs from LFS
 
 plinux supplies its own bootloader, init, getty and login, so the corresponding
-book sections do not apply and their packages are not in `wget-list-sysv`:
+book sections do not apply and their packages are in no list here:
 
 | Book section | LFS package | Replaced by |
 | --- | --- | --- |
@@ -288,12 +450,15 @@ Two packages stay because only one program in each is superseded:
 | 8.79. Util-linux-2.41.1 | blkid, mount, cfdisk, blockdev and the rest | `agetty`, replaced by [pgetty](src/pgetty) |
 | 8.28. Shadow-4.18.0 | passwd, su, the account database | `login`, replaced by [plogin](src/plogin) |
 
-Shadow is not built yet. The account database is the single root entry in
+Shadow is not built. The account database is the single root entry in
 `sys/etc/passwd`, which is all a one-user system needs.
 
-Also note LFS builds inside a chroot and installs straight into `/usr`. This
-project stages into `obj/`, so book recipes need `DESTDIR` or an equivalent
-prefix before being run here.
+The larger departure is that LFS builds inside a chroot, on a toolchain it
+builds first, and installs straight into `/usr`. plinux builds on the host
+toolchain and stages into `obj/`, so book recipes need `DESTDIR` or an
+equivalent prefix before being run here — and so the isolation a chroot gives
+for free has to be arranged explicitly, which is what the sysroot section
+above is about.
 
 ## System configuration
 
@@ -304,8 +469,13 @@ installs it as part of a normal build:
 | --- | --- | --- |
 | `sys/root/` | `/root/` | `.bash_profile`, `.bashrc`, `shell_config.sh` |
 | `sys/scripts/` | `/usr/bin/` | `init_os`, `set_ip`, `pdevices` |
-| `sys/etc/` | `/etc/` | `passwd`, `group` |
+| `sys/etc/` | `/etc/` | staged whole: `passwd`, `group`, `fstab`, `iwd/main.conf` |
 | `sys/kernel_config` | `src/linux/.config` | installed by `./configure` |
+
+`sys/etc/` is copied wholesale rather than file by file, so a package that
+needs a configuration file only has to have it added there — before that, each
+new file also needed a line in `build.sh`, and one of them was missed for as
+long as iwd had been in the image.
 
 Only root exists on this system, so `/etc/passwd` is a single line and nothing
 is chmodded during staging.
@@ -315,29 +485,12 @@ symlink rather than by copy. Editing them changes the running machine as well
 as the next image, so a mistake here is felt immediately. They are written to
 tolerate that: no bare `mkdir` without checking the binary exists, `HOME`
 defaulted, and `init_os` only run on `tty1` with no display already up.
+`pdevices` and `init_os` also skip anything already running, since `init_os`
+runs again every time the login shell on tty1 comes back.
 
-## Downloading LFS sources
-
-`wget-list-sysv` holds the package and patch URLs for LFS 12.4, less the four
-entries listed above, so 91 of the book's 95.
-
-```sh
-./download.sh            # fetch everything missing into sources/
-./download.sh retry      # only the entries that failed last time
-./download.sh verify     # md5sum -c, if md5sums is present
-./download.sh help
-```
-
-Each file is fetched separately so a bad mirror is named rather than lost in
-the noise. Complete files are skipped, partial ones resumed, and failures are
-recorded in `sources/.failed` for `retry`. The exit status is 0 only when every
-file was obtained, so it can gate a build script.
-
-`md5sums` is not in this repository. Fetch it from the same release of the book
-as `wget-list-sysv` and put it beside the script to enable `verify`.
-
-The list includes `systemd-257.8.tar.gz`, `systemd-man-pages-257.8.tar.xz` and
-`udev-lfs-20230818.tar.xz`, which are what the book's udev section needs.
+Nothing on this system calls `syslog(3)` and there is no syslog daemon, so the
+two daemons that can fail quietly write to files instead:
+`/var/log/udevd.log` and `/var/log/iwd.log`, one generation each.
 
 ## Reference
 
@@ -363,10 +516,6 @@ commands can be copied out directly. Regenerate both files with:
 ```sh
 pdftotext -layout docs/LFS-BOOK-12.4.pdf docs/LFS-BOOK-12.4.txt
 ```
-
-LFS installs straight into `/usr` because it builds inside a chroot. This
-project stages into `obj/` instead, so its recipes need a `DESTDIR` or an
-equivalent prefix before they are run here.
 
 ## Licensing
 
