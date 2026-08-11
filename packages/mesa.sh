@@ -68,7 +68,7 @@ meson_setup build                      \
       -Degl=enabled                    \
       -Dgbm=enabled                    \
       -Dglx=disabled                   \
-      -Dglvnd=disabled                 \
+      -Dglvnd=enabled                  \
       -Dvideo-codecs=all               \
       -Dgallium-va=disabled            \
       -Dgallium-vdpau=disabled         \

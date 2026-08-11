@@ -17,9 +17,9 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and forty-nine packages. Thirty-three of them make a console
+prefers it; and fifty packages. Thirty-three of them make a console
 system that can partition a disk, repair its own filesystems, join a wireless
-network and edit its own configuration; the other sixteen are the Wayland
+network and edit its own configuration; the other seventeen are the Wayland
 stack so far, which does not reach a compositor yet. There is no service manager, no package manager,
 and no toolchain in the image — packages are compiled on the host and staged
 into `obj/`, which becomes the root filesystem.
@@ -42,7 +42,7 @@ git clone https://github.com/oscar0pavon/plinux
 cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
 ./download.sh all        # fetch every source into sources/
-./build.sh packages      # the 49 packages in packages/order, into obj/
+./build.sh packages      # the 50 packages in packages/order, into obj/
 ./build.sh               # pboot, kernel, pinit, pgetty, plogin
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
@@ -115,7 +115,7 @@ kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
 no package will compile without them.
 
 **`./download.sh all`** fetches both lists: the thirty-five tarballs and
-patches of `wget-list-core`, and the sixteen of `wget-list-gui`. Plain
+patches of `wget-list-core`, and the seventeen of `wget-list-gui`. Plain
 `./download.sh` takes only the core, which is enough for a console system but
 not for `packages/order` as it now stands — that ends with the Wayland tier.
 See [Downloading sources](#downloading-sources).
@@ -282,7 +282,13 @@ paths. Everything installs with `DESTDIR=obj`, never into the host. A package
 that completes leaves a stamp in `obj/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
-Built so far, 49 packages:
+Staging adds and overwrites but never deletes, so a package that changes what
+it installs leaves the old files behind. Rebuilding mesa against libglvnd left
+its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `obj/usr/lib` with
+nothing pointing at them. Harmless, but they accumulate; `clean all` is the
+only thing that removes them.
+
+Built so far, 50 packages:
 
 | Package | Why it is here |
 | --- | --- |
@@ -323,7 +329,8 @@ Built so far, 49 packages:
 | libinput | pointer acceleration, gestures, tap-to-click, and the device quirks database |
 | gcc-runtime | libstdc++, libgcc_s and libgomp, copied from the host toolchain |
 | elfutils | libelf only, which mesa's radeonsi hard-requires |
-| mesa | EGL, GLES2, GBM and Vulkan; radeonsi and RADV, built without LLVM |
+| libglvnd | vendor-neutral dispatch: libOpenGL, libEGL and the GLES libraries |
+| mesa | GBM, Vulkan and the GL drivers behind libglvnd; radeonsi and RADV, no LLVM |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`

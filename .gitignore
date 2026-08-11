@@ -66,3 +66,4 @@ src/mtdev-*/
 src/libinput-*/
 src/mesa-*/
 src/elfutils-*/
+src/libglvnd-*/

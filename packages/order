@@ -144,6 +144,10 @@ libinput
 gcc-runtime
 elfutils
 
+# libglvnd before mesa: mesa has to know at configure time whether it is the
+# dispatch layer or a vendor behind one.
+libglvnd
+
 # Tier 4. mesa: OpenGL, EGL, GBM and Vulkan.
 #
 # radeonsi for the Navi 23, RADV for its Vulkan, and no LLVM -- radeonsi
