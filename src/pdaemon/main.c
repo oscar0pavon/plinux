@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <time.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -37,6 +38,10 @@
 #include "daemons.h"
 
 #define LOG_DIRECTORY  "/var/log"
+
+/* On /run, which pinit mounts as a fresh tmpfs every boot, so a lock left by
+   a machine that lost power is gone before this ever runs. */
+#define LOCK_PATH      "/run/pdaemon.lock"
 
 /* Five starts in ten seconds is the point at which restarting has stopped
    being a recovery and become a loop. Same numbers as pinit's gettys. */
@@ -238,9 +243,52 @@ static void shutdown_daemons(void){
       kill(daemon_pid[index], SIGKILL);
 }
 
-int main(void){
+/* Refuse to be the second pdaemon.
+ *
+ * This is the guard the shell scripts had as "pgrep -x", done the way a
+ * program can do it: flock(2) is atomic, checks nothing by name, and the
+ * kernel drops the lock when the holder dies, however it dies. The fd is
+ * deliberately never closed -- holding it *is* the mechanism.
+ *
+ * It exists because running pdaemon by hand did real damage. pdaemon never
+ * exits and says nothing to the terminal -- everything it writes goes to the
+ * log files -- so from the shell it just hangs; and before hanging it starts
+ * a second seatd, which unlinks /run/seatd.sock and rebinds it
+ * (seatd.c:167, "Removing leftover socket"), stealing the socket from the
+ * seatd that sway is using. The seat then cannot be re-acquired and sway
+ * will not start again until the duplicates are killed. */
+static void ensure_single_instance(void){
+  int lock_fd = open(LOCK_PATH, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+
+  if(lock_fd < 0){
+    report_error("open", LOCK_PATH, errno);
+    return;                       /* no /run is not a reason to refuse boot */
+  }
+
+  if(flock(lock_fd, LOCK_EX | LOCK_NB) != 0){
+    fprintf(stderr, "pdaemon: already running\n");
+    _exit(1);
+  }
+}
+
+int main(int argc, char *argv[]){
   int signal_number;
   int index;
+
+  /* "pdaemon up" was tried once, on the reasonable guess that a daemon
+     manager has subcommands. This one does not -- pinit starts it, and it
+     keeps the daemons up by itself -- and silently ignoring the word made
+     that guess expensive: the caller got a second pdaemon instead of an
+     answer. */
+  if(argc > 1){
+    fprintf(stderr, "pdaemon: takes no arguments; "
+                    "pinit starts it and it keeps the daemons running\n");
+    return 1;
+  }
+
+  (void)argv;
+
+  ensure_single_instance();
 
   /* Blocked and collected with sigwait, so there are no handlers running
      between instructions and no restarted syscalls. pinit does the same. */
