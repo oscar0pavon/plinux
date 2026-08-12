@@ -66,7 +66,8 @@ Everything with a `p` prefix is written for this project:
 | Component | What it is |
 | --- | --- |
 | [pboot](src/pboot) | UEFI bootloader. Reads `pboot.conf`, loads a kernel with parameters, optional menu |
-| [pinit](src/pinit) | PID 1. Mounts the filesystems, brings up the network, starts the gettys |
+| [pinit](src/pinit) | PID 1. Mounts the filesystems, brings up the network, starts pdaemon and the gettys |
+| [pdaemon](src/pdaemon) | Supervises udevd, seatd, dbus-daemon and iwd: starts them, logs them, restarts them |
 | [pgetty](src/pgetty) | Console getty, derived from mingetty |
 | [plogin](src/plogin) | Sets up the root environment and execs the shell |
 
@@ -504,6 +505,8 @@ UEFI firmware
      mounts proc, sys, devtmpfs, devpts and tmpfs itself, runs mount -a -F
      for the block devices in /etc/fstab, configures loopback, then starts
      a getty per console
+  -> pdaemon          udevd, seatd, dbus-daemon, iwd -- each in the
+                      foreground, each logged, each restarted if it dies
   -> pgetty           tty1, tty2, ttyS0
   -> plogin
   -> bash
@@ -634,9 +637,10 @@ defaulted, and `init_os` only run on `tty1` with no display already up.
 `pdevices` and `init_os` also skip anything already running, since `init_os`
 runs again every time the login shell on tty1 comes back.
 
-Nothing on this system calls `syslog(3)` and there is no syslog daemon, so the
-two daemons that can fail quietly write to files instead:
-`/var/log/udevd.log` and `/var/log/iwd.log`, one generation each.
+Nothing on this system calls `syslog(3)` and there is no syslog daemon, so
+everything that can fail quietly writes to a file instead. pdaemon gives each
+of its four a `/var/log/<name>.log` with one previous generation, and
+`init_os` does the same for sway.
 
 ## Reference
 

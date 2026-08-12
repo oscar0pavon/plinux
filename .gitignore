@@ -80,3 +80,4 @@ src/json-c-*/
 src/wlroots-*/
 src/sway-*/
 src/dejavu-fonts-*/
+src/pdaemon/pdaemon

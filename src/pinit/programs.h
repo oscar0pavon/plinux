@@ -87,6 +87,11 @@ static char * const mount_all_command[] = {"/bin/mount", "-a", "-F", NULL};
 /* swap likewise: "swap" lines in the same fstab */
 static char * const swapon_all_command[] = {"/sbin/swapon", "-a", NULL};
 
+/* The daemon supervisor: udevd, seatd, dbus-daemon and iwd, each run in the
+   foreground so it has children it can actually watch. pinit starts it and
+   restarts it the same way it does a getty. */
+static char * const pdaemon_command[] = {"/sbin/pdaemon", NULL};
+
 /* Shutdown, and the same argument as mounting: umount(8) already reads the
    mount table in the right order. -r remounts anything it cannot unmount
    read-only, which includes the root filesystem it is running from. */

@@ -897,6 +897,19 @@ if have_source "Building init PID 1" ${src_directory}/pinit; then
   popd
 fi
 
+# The daemon supervisor. Into /usr/sbin rather than / like pinit: pinit has
+# to be at a path the kernel is told about in pboot.conf, this one only has
+# to be on a path pinit can exec.
+if have_source "Building daemon supervisor" ${src_directory}/pdaemon; then
+  pushd ${src_directory}/pdaemon
+  if run pdaemon make; then
+    stage pdaemon ${build_directory}/usr/sbin/pdaemon || failed=$((failed + 1))
+  else
+    failed=$((failed + 1))
+  fi
+  popd
+fi
+
 if have_source "Building getty" ${src_directory}/pgetty; then
   pushd ${src_directory}/pgetty
   if run pgetty make; then

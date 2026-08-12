@@ -183,11 +183,49 @@ static void getty_start(unsigned int index){
   getty_pid[index] = launch_getty(getty_table[index]);
 }
 
+/* pdaemon supervises udevd, seatd, dbus and iwd, and pinit supervises
+   pdaemon. It gets the same treatment as a getty and for the same reason: it
+   is a long-lived child that should come back if it dies, but not forever if
+   it cannot start at all.
+
+   Those daemons used to be started by init_os, which is a login profile that
+   runs on tty1 -- so they only started if somebody logged in, they were
+   children of that login shell, and each needed a pgrep guard because the
+   script runs again every time the shell comes back. */
+static pid_t pdaemon_pid;
+static time_t pdaemon_window_start;
+static int pdaemon_starts;
+
+static void pdaemon_start(void){
+  time_t now = time(NULL);
+
+  if(now - pdaemon_window_start > RESPAWN_WINDOW){
+    pdaemon_window_start = now;
+    pdaemon_starts = 0;
+  }
+
+  if(pdaemon_starts >= RESPAWN_LIMIT){
+    if(pdaemon_pid != -1){
+      report_error("respawning too fast, giving up on", "pdaemon", EAGAIN);
+      pdaemon_pid = -1;
+    }
+    return;
+  }
+
+  pdaemon_starts++;
+  pdaemon_pid = launch_getty(pdaemon_command);
+}
+
 /* Called for every child that has been reaped. Children that are not gettys
    -- the mount helpers, anything a login shell orphaned onto init -- match
    nothing and are simply forgotten, which is the whole job for those. */
 static void getty_replace(pid_t pid){
   unsigned int index;
+
+  if(pid == pdaemon_pid){
+    pdaemon_start();
+    return;
+  }
 
   for(index = 0; index < GETTY_COUNT; index++){
     if(getty_pid[index] == pid){
@@ -307,6 +345,13 @@ static void initialize(void){
   storage_setup();
 
   loopback_setup();
+
+  /* Before the gettys, so the daemons are on their way up while the login
+     prompts appear rather than waiting on somebody logging in. That was the
+     old arrangement's real flaw: udevd, seatd, dbus and iwd were started by a
+     tty1 login profile, so a machine nobody logged into had no devices
+     managed, no seat, no bus and no network. */
+  pdaemon_start();
 
   for(unsigned int index = 0; index < GETTY_COUNT; index++)
     getty_start(index);
