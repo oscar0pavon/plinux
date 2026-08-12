@@ -204,8 +204,8 @@ static void getty_replace(pid_t pid){
    mounts devtmpfs itself when CONFIG_DEVTMPFS_MOUNT is set, and the call
    below is kept only for kernels built without it. */
 static void mount_now(char* const filesystem[], unsigned long int mode){
-  if(mount(filesystem[0], filesystem[1], filesystem[2], mode, NULL) != 0
-     && errno != EBUSY)
+  if(mount(filesystem[0], filesystem[1], filesystem[2], mode, filesystem[3])
+     != 0 && errno != EBUSY)
     report_error("mount", filesystem[1], errno);
 }
 
@@ -292,6 +292,12 @@ static void initialize(void){
 
   mount_now(pts_filesystem, 0);
   mount_now(shm_filesystem, MS_NOSUID | MS_NODEV);
+
+  /* After /run and /dev/shm, and before anything can write to it. Mounting a
+     tmpfs over /tmp hides whatever was on the root filesystem underneath --
+     it still occupies the disk, it is simply unreachable until this is
+     unmounted, which on the workstation is 7.3G worth clearing once. */
+  mount_now(tmp_filesystem, MS_NOSUID | MS_NODEV);
 
   symlink("/proc/self/fd/0","/dev/stdin");
   symlink("/proc/self/fd/1","/dev/stdout");

@@ -7,9 +7,13 @@ fi
 
 # Wayland requires this to exist and be private before anything starts. It
 # used to be set in init_os, which runs after this block, so the outer test
-# never passed and the directory was never created here. On this workstation
-# /tmp lives on the root filesystem, so a directory made once has survived
-# every reboot and hidden that; a tmpfs /tmp, or a fresh image, has nothing.
+# never passed and the directory was never created here. That went unnoticed
+# because /tmp was part of the root filesystem, so a directory made once
+# survived every reboot and hid the fact that nothing was making it.
+#
+# pinit mounts /tmp as a tmpfs now, which is what the specification wants --
+# XDG_RUNTIME_DIR must not survive a reboot -- and which means this mkdir is
+# load-bearing on every boot rather than only on a fresh image.
 # :- keeps a value set by a real session manager if one ever sets it.
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/00-runtime-dir}
 

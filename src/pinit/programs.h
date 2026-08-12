@@ -21,18 +21,61 @@
 
 /* Two shapes live here, and they are not interchangeable.
  *
- * A filesystem is {source, target, type} and is passed to mount(2) directly.
- * A command is an argv, NULL terminated, and is passed to execvp(3). */
+ * A filesystem is {source, target, type, data} and is passed to mount(2)
+ * directly. A command is an argv, NULL terminated, and is passed to
+ * execvp(3).
+ *
+ * The fourth element is mount(2)'s data argument and was NULL for every
+ * filesystem until /tmp needed one. Flags and data are not the same thing:
+ * nosuid, nodev and noexec are flags, while size= and mode= are strings the
+ * filesystem parses itself, and there is no flag that can express them. It
+ * matters because /etc/fstab cannot supply them either -- pinit mounts these
+ * before "mount -a" runs, and mount(8) skips a target that is already
+ * mounted, so options written in fstab for any of these lines are read by
+ * nobody. */
 
-static char * const proc_filesystem[]    = {"proc",     "/proc",    "proc"};
-static char * const sysfs_filesystem[]   = {"sysfs",    "/sys",     "sysfs"};
-static char * const dev_filesystem[]     = {"dev",      "/dev",     "devtmpfs"};
-static char * const run_filesystem[]     = {"tmpfs",    "/run",     "tmpfs"};
-static char * const pts_filesystem[]     = {"devpts",   "/dev/pts", "devpts"};
-static char * const shm_filesystem[]     = {"tmpfs",    "/dev/shm", "tmpfs"};
+static char * const proc_filesystem[]    = {"proc",     "/proc",    "proc",    NULL};
+static char * const sysfs_filesystem[]   = {"sysfs",    "/sys",     "sysfs",   NULL};
+static char * const dev_filesystem[]     = {"dev",      "/dev",     "devtmpfs", NULL};
+static char * const run_filesystem[]     = {"tmpfs",    "/run",     "tmpfs",   NULL};
+static char * const pts_filesystem[]     = {"devpts",   "/dev/pts", "devpts",  NULL};
+static char * const shm_filesystem[]     = {"tmpfs",    "/dev/shm", "tmpfs",   NULL};
 static char * const efivars_filesystem[] = {"efivarfs",
                                             "/sys/firmware/efi/efivars",
-                                            "efivarfs"};
+                                            "efivarfs",
+                                            NULL};
+
+/* /tmp on a tmpfs, which is a change of behaviour and not just of location.
+ *
+ * It was part of the root filesystem, and nothing on this system has ever
+ * cleaned it: no systemd-tmpfiles, no cron. The workstation's had reached
+ * 7.3G across 487 entries, 438 of them untouched for over a month. A tmpfs
+ * is empty after every boot because it never existed before it, so the
+ * cleaning stops being a task that gets forgotten.
+ *
+ * It is also faster, and it stops a directory whose entire purpose is to be
+ * thrown away from being written to an SSD -- both drives here are DRAM-less
+ * controllers, which handle small sustained writes worst.
+ *
+ * And XDG_RUNTIME_DIR lives under it. The specification says that directory
+ * must be cleared when the user logs out and must not survive a reboot; on
+ * disk it survived both, which is the bug .bash_profile documents -- a
+ * directory created once hid the fact that nothing was creating it.
+ *
+ * size=25% rather than the 50% default, because one pinit boots two machines:
+ * 25% is about 7.8G on the 31G workstation and 2G in the 8G VM, and the
+ * workstation has 32G of swap, so overflow degrades instead of failing.
+ *
+ * mode=1777 is the sticky bit. This is a single-user system where it guards
+ * nothing, but /tmp with the wrong mode is the kind of difference that
+ * surprises a program that checks.
+ *
+ * What must not move here is anything wanted after a crash. Blender autosaves
+ * to TMPDIR -- 686M each on this machine -- and an autosave in RAM dies with
+ * the machine, which is the case it exists for. Those belong in /var/tmp,
+ * which FHS defines as the temporary directory that survives a reboot. */
+static char * const tmp_filesystem[]     = {"tmpfs",    "/tmp",     "tmpfs",
+                                            "mode=1777,size=25%"};
 
 /* The block devices come from /etc/fstab rather than from this file, so one
    pinit boots both the workstation and the VM image. -F forks per device, so
