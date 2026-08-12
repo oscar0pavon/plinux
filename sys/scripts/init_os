@@ -14,8 +14,28 @@ pdevices
 # seatd is what sway's session handling talks to; shell_config.sh sets
 # LIBSEAT_BACKEND=seatd to match. An image built without it should say so
 # once rather than print "command not found" on every boot.
+#
+# Only if one is not already running, which is the same guard udevd and
+# dbus-daemon have and seatd was missing. This script runs again every time
+# the login shell on tty1 comes back -- which is what happens when sway exits
+# -- and seatd does not refuse a second copy: it logs "Removing leftover
+# socket at /run/seatd.sock" and takes /run/seatd.sock over from the first,
+# which is left running with nothing connected to it.
+#
+# Its output went to tty1 alongside sway's, where it was equally unreadable.
+# Same file-and-one-generation treatment as udevd, iwd and sway.
+#
+# The rotation happens only on the path that actually starts seatd. Moving
+# the file while a running seatd holds it open would not start a new log --
+# the open descriptor follows the inode, so the live daemon would go on
+# writing into seatd.log.1.
 if command -v seatd > /dev/null; then
-	seatd &
+	if pgrep -x seatd > /dev/null 2>&1; then
+		echo "init_os: seatd already running" >&2
+	else
+		[ -f /var/log/seatd.log ] && mv -f /var/log/seatd.log /var/log/seatd.log.1
+		seatd > /var/log/seatd.log 2>&1 &
+	fi
 fi
 
 mkdir -p /run/dbus
