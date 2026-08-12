@@ -98,7 +98,18 @@ set_ip > /var/log/iwd.log 2>&1 &
 # through to the login shell is the useful outcome there; dbus-run-session
 # exiting with "failed to exec 'sway'" is not.
 #SHELL=/usr/bin/zsh dbus-run-session sway
-if command -v sway > /dev/null; then
+# The guard is on "one is running right now", not on "one has ever run", so
+# it does not stop sway being started again after it exits -- that is the
+# normal way back into the compositor from the tty1 shell. What it stops is
+# the second copy that a hand-run init_os used to start while the first was
+# up, which cannot work: the seat is VT-bound and already has an active
+# client, so the new sway dies with "Device or resource busy" and takes the
+# useful contents of sway.log with it on the way past.
+if ! command -v sway > /dev/null; then
+	echo "init_os: no sway installed, staying on the console" >&2
+elif pgrep -x sway > /dev/null 2>&1; then
+	echo "init_os: sway already running" >&2
+else
 	[ -f /var/log/sway.log ] && mv -f /var/log/sway.log /var/log/sway.log.1
 
 	dbus-run-session sway > /var/log/sway.log 2>&1
@@ -107,6 +118,4 @@ if command -v sway > /dev/null; then
 	if [ "${sway_status}" -ne 0 ]; then
 		echo "init_os: sway exited ${sway_status}, see /var/log/sway.log" >&2
 	fi
-else
-	echo "init_os: no sway installed, staying on the console" >&2
 fi
