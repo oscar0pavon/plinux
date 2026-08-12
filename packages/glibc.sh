@@ -55,3 +55,21 @@ echo "rootsbindir=/usr/sbin" > configparms
 make
 
 make DESTDIR="${build_directory}" install
+
+# make install stages the locale *sources* -- usr/share/i18n -- but compiles
+# none of them, so the image had no locale at all and setlocale() could
+# satisfy nothing beyond the built-in C. shell_config.sh exports
+# LANG=C.UTF-8, and the first program to take that at its word was foot,
+# which requires a UTF-8 locale and refused to start with "invalid locale".
+#
+# C.UTF-8 is the book's minimum (section 8.5, "some locales ... are highly
+# recommended") and all a one-user system whose files are ASCII and UTF-8
+# needs. The book's other recommendations are national locales.
+#
+# This is the host's localedef, writing the image's locale archive: the
+# compiled format is tied to the glibc version, and the host runs the same
+# 2.42 this package stages. I18NPATH points it at the sources staged above
+# rather than the host's copies all the same.
+mkdir -p "${build_directory}/usr/lib/locale"
+I18NPATH="${build_directory}/usr/share/i18n" \
+localedef --prefix="${build_directory}" -i C -f UTF-8 C.UTF-8
