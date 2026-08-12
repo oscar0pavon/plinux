@@ -43,13 +43,20 @@ fi
 [ -f /var/log/iwd.log ] && mv -f /var/log/iwd.log /var/log/iwd.log.1
 set_ip > /var/log/iwd.log 2>&1 &
 
-# The filesystems belong to pinit, which runs "mount -a -F" over /etc/fstab
-# before any of this. These two are kept only so a machine still booting the
-# older pinit comes up the same way; both skip anything already mounted, so
-# they cost nothing here and can be dropped once every machine runs the new
-# init. The devices themselves are named by UUID in /etc/fstab.
-mount -a
-swapon -a
+# The filesystems belong to pinit, which runs "mount -a -F" over /etc/fstab.
+# This used to run "mount -a" and "swapon -a" again, kept for machines still
+# booting the older pinit, on the reasoning that mount skips anything already
+# mounted so it cost nothing. It cost something.
+#
+# pinit does that work in a forked child and returns immediately, so the disks
+# mount while the rest of the boot carries on. On a machine this fast the tty1
+# login wins that race: mount here read a mount table the background child had
+# not finished writing, saw the filesystems as absent, and mounted every one of
+# them a second time, stacked on the first. /boot, /data, /data2, /data3 and
+# /data4 were each mounted twice.
+#
+# It is the same superblock underneath, so nothing was corrupted -- but df and
+# findmnt lie, and every unmount at shutdown has to happen twice.
 
 #server &
 
