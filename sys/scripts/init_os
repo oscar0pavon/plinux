@@ -60,12 +60,33 @@ set_ip > /var/log/iwd.log 2>&1 &
 
 #server &
 
+# sway's output went to tty1, which is the one place it cannot be read: sway
+# takes over that display a fraction of a second later, and if it fails
+# instead, the errors scroll past behind the login prompt. That is why "sway
+# does not start" looked like sway saying nothing at all -- it had been
+# printing "Failed to create renderer" the whole time.
+#
+# So the same treatment udevd and iwd already get: one file, one generation
+# kept, because the boot whose log matters is usually the one that made you
+# reboot. /var/log is on the root filesystem, not the tmpfs, so it survives.
+#
+# Not silent, though. The exit status still gets a line on the console, since
+# a compositor that quits and leaves you at a shell prompt should say why
+# rather than leave you to find the file.
+#
 # The image is a console system until the sway chain is built. Falling
 # through to the login shell is the useful outcome there; dbus-run-session
 # exiting with "failed to exec 'sway'" is not.
 #SHELL=/usr/bin/zsh dbus-run-session sway
 if command -v sway > /dev/null; then
-	dbus-run-session sway
+	[ -f /var/log/sway.log ] && mv -f /var/log/sway.log /var/log/sway.log.1
+
+	dbus-run-session sway > /var/log/sway.log 2>&1
+	sway_status=$?
+
+	if [ "${sway_status}" -ne 0 ]; then
+		echo "init_os: sway exited ${sway_status}, see /var/log/sway.log" >&2
+	fi
 else
 	echo "init_os: no sway installed, staying on the console" >&2
 fi
