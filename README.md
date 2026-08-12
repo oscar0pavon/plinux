@@ -17,10 +17,10 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and sixty-four packages. Thirty-three of them make a console
+prefers it; and sixty-eight packages. Thirty-three of them make a console
 system that can partition a disk, repair its own filesystems, join a wireless
-network and edit its own configuration; the other thirty-one are the Wayland
-stack, which now reaches sway. There is no service manager, no package manager,
+network and edit its own configuration; the other thirty-five are the Wayland
+stack, which now reaches sway, with foot and wmenu to run inside it. There is no service manager, no package manager,
 and no toolchain in the image — packages are compiled on the host and staged
 into `obj/`, which becomes the root filesystem.
 
@@ -42,7 +42,7 @@ git clone https://github.com/oscar0pavon/plinux
 cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
 ./download.sh all        # fetch every source into sources/
-./build.sh packages      # the 64 packages in packages/order, into obj/
+./build.sh packages      # the 68 packages in packages/order, into obj/
 ./build.sh               # pboot, kernel, pinit, pgetty, plogin
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
@@ -116,7 +116,7 @@ kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
 no package will compile without them.
 
 **`./download.sh all`** fetches both lists: the thirty-five tarballs and
-patches of `wget-list-core`, and the 29 of `wget-list-gui`. Plain
+patches of `wget-list-core`, and the 33 of `wget-list-gui`. Plain
 `./download.sh` takes only the core, which is enough for a console system but
 not for `packages/order` as it now stands — that ends with the Wayland tier.
 See [Downloading sources](#downloading-sources).
@@ -290,7 +290,7 @@ its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `obj/usr/lib` with
 nothing pointing at them. Harmless, but they accumulate; `clean all` is the
 only thing that removes them.
 
-Built so far, 64 packages:
+Built so far, 68 packages:
 
 | Package | Why it is here |
 | --- | --- |
@@ -346,6 +346,10 @@ Built so far, 64 packages:
 | wlroots | the compositor library: DRM output, libinput devices, GLES2 rendering |
 | sway | the compositor itself |
 | dejavu-fonts | a font, without which every label renders as a box |
+| tllist | a single-header list that fcft and foot both include |
+| fcft | the font library foot renders with |
+| foot | the terminal; sway's default config opens it on $mod+Return |
+| wmenu | the launcher on $mod+d; wmenu-run feeds it $PATH and execs the pick |
 
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`

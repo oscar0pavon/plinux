@@ -121,3 +121,17 @@ https://github.com/json-c/json-c/archive/json-c-0.18-20240915/json-c-0.18-202409
 https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.19.1/wlroots-0.19.1.tar.gz
 https://github.com/swaywm/sway/releases/download/1.11/sway-1.11.tar.gz
 https://downloads.sourceforge.net/dejavu/dejavu-fonts-ttf-2.37.tar.bz2
+
+# Tier 7. A terminal and a launcher, so the compositor is usable.
+#
+# sway's own default configuration names both: $mod+Return runs foot and
+# $mod+d runs wmenu-run. fcft is the font library foot renders with, and
+# tllist is a single-header list that fcft and foot both include.
+#
+# All four come from Codeberg, a Forgejo instance, whose generated archive
+# URLs end in the tag like the sourcehut one above -- without the rename,
+# foot would land in sources/ as 1.27.0.tar.gz.
+https://codeberg.org/dnkl/tllist/archive/1.1.0.tar.gz  tllist-1.1.0.tar.gz
+https://codeberg.org/dnkl/fcft/archive/3.3.3.tar.gz    fcft-3.3.3.tar.gz
+https://codeberg.org/dnkl/foot/archive/1.27.0.tar.gz   foot-1.27.0.tar.gz
+https://codeberg.org/adnano/wmenu/archive/0.2.0.tar.gz wmenu-0.2.0.tar.gz

@@ -193,3 +193,14 @@ json-c
 wlroots
 sway
 dejavu-fonts
+
+# Tier 7. A terminal and a launcher.
+#
+# tllist is a header fcft and foot both include, fcft is the font library
+# foot renders with. sway's default configuration binds $mod+Return to foot
+# and $mod+d to wmenu-run, so with these four the compositor stops being a
+# wallpaper.
+tllist
+fcft
+foot
+wmenu
