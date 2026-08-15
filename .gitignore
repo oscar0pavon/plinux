@@ -2,6 +2,18 @@
 obj
 build/
 
+# $LFS: the chapter 5 cross toolchain and the system being grown alongside
+# obj/. Built by ./build.sh toolchain, and not deleted by "clean all".
+lfs/
+
+# unpacked by the scripts in toolchain/. gcc's tree holds gmp, mpfr and mpc
+# inside it, which is where GCC's build system expects to find them, and
+# linux-6.16.1 is there for its headers only -- src/linux stays the kernel
+# that gets built and booted.
+src/binutils-*/
+src/gcc-*/
+src/linux-*/
+
 src/pgetty/pgetty
 src/pinit/pinit
 

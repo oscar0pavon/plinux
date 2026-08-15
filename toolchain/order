@@ -1,0 +1,29 @@
+# LFS chapter 5, the cross toolchain. One step per line, blank lines and
+# comments ignored. ./build.sh toolchain walks this from the top.
+#
+# The order is the book's and it is not negotiable: each step exists because
+# the one before it left something missing.
+#
+# binutils-pass1 first, because glibc and gcc both probe the assembler and
+# linker to decide which of their own features to enable, so they have to
+# find the cross versions rather than this machine's.
+binutils-pass1
+
+# gcc-pass1 is a compiler with no C library to compile against -- built
+# --without-headers --with-newlib, producing nothing but libgcc. It exists
+# only to build glibc.
+gcc-pass1
+
+# the kernel's userspace API, which glibc is written against and cannot
+# configure without.
+linux-headers
+
+# glibc, cross-compiled by gcc-pass1 into $LFS. After this the target has a
+# C library and the sanity checks at the end of the step can prove the
+# compiler is reaching for it and not for the host's.
+glibc
+
+# libstdc++, deferred out of gcc-pass1 because it needs the glibc that only
+# exists as of the line above. Chapter 6's binutils-pass2 and gcc-pass2 are
+# the first things to need it.
+libstdcxx

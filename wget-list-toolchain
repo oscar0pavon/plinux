@@ -1,0 +1,24 @@
+# The cross toolchain of LFS chapters 5 and 6, which the other lists do not
+# carry.
+#
+# wget-list-core and wget-list-gui describe the system that gets installed.
+# These five describe the compiler that installs it, and they are separate
+# because they are the only tarballs here that never reach the image: the
+# chapter 5 toolchain lands in $LFS/tools and chapter 7.13 deletes it.
+#
+# glibc-2.42 and glibc-2.42-fhs-1.patch are not listed. They are already in
+# sources/ for packages/glibc.sh, and chapter 5 builds that same tarball --
+# once cross-compiled into $LFS, and again natively in chapter 8.
+#
+# gmp, mpfr and mpc are GCC's arithmetic dependencies. They are not built as
+# packages; they unpack *inside* the gcc tree under those exact names and
+# GCC's build system picks them up on its own (LFS 5.3.1).
+# The kernel is here for its headers only, and the version matters. See
+# toolchain/linux-headers.sh: glibc 2.42 will not compile against the 7.x
+# uapi headers in src/linux.
+https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.16.1.tar.xz
+https://sourceware.org/pub/binutils/releases/binutils-2.45.tar.xz
+https://ftpmirror.gnu.org/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz
+https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.xz
+https://ftpmirror.gnu.org/mpfr/mpfr-4.2.2.tar.xz
+https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz

@@ -13,6 +13,11 @@ src_directory=${working_directory}/src
 build_directory=${working_directory}/obj
 sources_directory=${working_directory}/sources
 
+# $LFS for the chapter 5 cross toolchain, and eventually for the chroot that
+# replaces this build model. Deliberately not obj/: the two trees are built by
+# different toolchains and obj/ stays bootable while lfs/ is being grown.
+lfs_directory=${LFS:-${working_directory}/lfs}
+
 # Where the redistributable firmware blobs are taken from, and which ones.
 # The build host is the machine the image is for, so what it loads is what
 # the image needs.
@@ -82,9 +87,18 @@ Commands:
   clean       Clean the cloned source trees and bash's configure output,
               and delete the unpacked package trees, which unpack again
               from sources/ on the next build
-  clean all   As above, and delete obj/ entirely
-  tools       Accepted but does nothing; the cross toolchain section at
-              the end of this script is unreachable
+  clean all   As above, and delete obj/ entirely. It does not touch lfs/:
+              the cross toolchain is hours of work and is not something to
+              lose to a command aimed at the package tree
+  toolchain   Build the LFS chapter 5 cross toolchain into lfs/, following
+              toolchain/order. Each step is stamped in lfs/.toolchain and
+              runs under "env -i", so nothing this workstation exports
+              reaches it. Not part of a plain build: it is built once and
+              then used
+
+                toolchain <name>  rebuild just that step
+                toolchain force   rebuild all of them
+
   help        This message
 
 Notes:
@@ -96,6 +110,7 @@ Examples:
   ./build.sh              # full build into obj/
   ./build.sh virt         # push obj/ into the VM image
   ./build.sh clean all    # start over
+  ./build.sh toolchain    # build the chapter 5 cross toolchain into lfs/
 USAGE
 }
 
@@ -107,7 +122,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|usb|clean|tools|packages|check|verbose|quiet) ;;
+  ""|virt|usb|clean|toolchain|packages|check|verbose|quiet) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -600,6 +615,124 @@ build_packages(){
   echo "packages installed into ${build_directory} in $(format_duration $((SECONDS - packages_started)))"
 }
 
+# The LFS chapter 5 cross toolchain, built into lfs/ rather than obj/.
+#
+# Alongside, not in place: obj/ holds a system that boots and it keeps booting
+# until this one can replace it. The two trees never touch.
+#
+# Every step runs under "env -i". That is not tidiness -- it is the same
+# discipline as the sysroot in packages/common.sh, applied to the environment
+# instead of the search path. This workstation's PATH carries rust, go, the
+# jdk, rocm, texlive and /musl/bin, and its shell exports MAKEFLAGS, CFLAGS
+# and a locale. Any of those reaching a configure script in chapter 5 is a
+# decision made by this machine about the compiler that is supposed to be
+# independent of it. toolchain/common.sh rebuilds the environment the book
+# specifies from nothing.
+build_toolchain(){
+  local toolchain_selector=${1:-}
+
+  echo "Building the cross toolchain into ${lfs_directory}"
+
+  local stamp_directory=${lfs_directory}/.toolchain
+  mkdir -p "${stamp_directory}"
+
+  local toolchain_force=
+  local toolchain_only=
+
+  case "${toolchain_selector}" in
+    ''|verbose|quiet) ;;
+    force)            toolchain_force=1 ;;
+    *)                toolchain_only=${toolchain_selector} ;;
+  esac
+
+  local toolchain_total
+  toolchain_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
+                      "${working_directory}/toolchain/order")
+
+  local toolchain_number=0
+  local toolchain_matched=
+  local toolchain_have=0
+  local toolchain_started=${SECONDS}
+  local script
+
+  local status_was_active=${status_active}
+  [ -z "${status_was_active}" ] && status_start
+  status_set "starting"
+
+  while read -r step; do
+    case "${step}" in ''|\#*) continue ;; esac
+
+    toolchain_number=$((toolchain_number + 1))
+
+    if [ -n "${toolchain_only}" ]; then
+      if [ "${step}" != "${toolchain_only}" ]; then
+        continue
+      fi
+      toolchain_matched=1
+    fi
+
+    script=${working_directory}/toolchain/${step}.sh
+
+    if [ ! -x "${script}" ]; then
+      status_stop
+      echo "  ${step}: no ${script}" >&2
+      exit 1
+    fi
+
+    if [ -f "${stamp_directory}/${step}" ] &&
+       [ -z "${toolchain_force}" ] && [ -z "${toolchain_only}" ]; then
+      echo "  have ${step}"
+      toolchain_have=$((toolchain_have + 1))
+      continue
+    fi
+
+    echo "  ${step}"
+    status_set "${step}   [${toolchain_number}/${toolchain_total}]"
+
+    # HOME and TERM are the only two carried through. TERM because the book
+    # carries it and because make's output is unreadable without it; HOME
+    # because a configure script that cannot find one occasionally writes
+    # into /, and that is the host.
+    if run "toolchain-${step}" \
+         env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
+                LFS="${lfs_directory}" \
+                MAKEFLAGS="-j$(nproc)" \
+                /bin/bash "${script}"; then
+      touch "${stamp_directory}/${step}"
+    else
+      status_set "${step}   [${toolchain_number}/${toolchain_total}]   FAILED"
+      status_stop
+      echo >&2
+      echo "${step} failed; the log is ${log_directory}/toolchain-${step}.log" >&2
+      # Each step here is the ground the next one stands on -- a glibc that
+      # did not install cannot be compensated for by carrying on to
+      # libstdc++ -- so this stops rather than counting failures.
+      exit 1
+    fi
+  done < "${working_directory}/toolchain/order"
+
+  [ -z "${status_was_active}" ] && status_stop
+
+  if [ "${toolchain_have}" -ne 0 ]; then
+    echo "  ${toolchain_have} already built"
+  fi
+
+  echo
+
+  if [ -n "${toolchain_only}" ] && [ -z "${toolchain_matched}" ]; then
+    echo "no such toolchain step: ${toolchain_only}" >&2
+    echo "steps are listed in ${working_directory}/toolchain/order" >&2
+    exit 1
+  fi
+
+  echo "cross toolchain built in $(format_duration $((SECONDS - toolchain_started)))"
+}
+
+if [ "$1" == "toolchain" ]; then
+  build_toolchain "${2:-}"
+  exit
+fi
+
 if [ "$1" == "packages" ]; then
   build_packages "${2:-}"
   exit
@@ -859,12 +992,6 @@ FSTAB
 
   echo "${usb_device} is ready"
   exit
-fi
-
-if [ "$1" == "tools" ]; then
-  echo "building tools"
-else
-  echo "Building standard"
 fi
 
 if [ "$1" == "clean" ]; then
@@ -1173,68 +1300,3 @@ fi
 
 echo "SUCCESS you have plinux in $(format_duration ${SECONDS})"
 exit
-
-
-################## Toolchain ###################
-
-build_directory=""
-src_directory=""
-musl_directory=""
-
-if [ -d obj ];then
-
-  pushd ${src_directory}
-
-  echo "############# Building Binutils"
-  pushd ${src_directory}/binutils
-  mkdir obj
-  pushd ${src_directory}/binutils/obj
-  ../configure --prefix=${build_directory}/tools \
-             --with-sysroot=${build_directory} \
-             --target=${target}       \
-             --disable-nls       \
-             --enable-gprofng=no \
-             --disable-werror    \
-             --enable-new-dtags  \
-             --enable-default-hash-style=gnu
-  make -j32
-  make -j32 install
-
-  popd #src
-
-
-  pushd ${src_directory}/gcc
-
-  mkdir obj
-  pushd ${src_directory}/gcc/obj
-
-  ../configure                              \
-    --target=${target}                      \
-    --prefix=${build_directory}/tools       \
-    --with-glibc-version=2.41               \
-    --with-sysroot=${build_directory}       \
-    --with-newlib             \
-    --without-headers         \
-    --enable-default-pie      \
-    --enable-default-ssp      \
-    --disable-nls             \
-    --disable-shared          \
-    --disable-multilib        \
-    --disable-threads         \
-    --disable-libatomic       \
-    --disable-libgomp         \
-    --disable-libquadmath     \
-    --disable-libssp          \
-    --disable-libvtv          \
-    --disable-libstdcxx       \
-    --enable-languages=c,c++
-
-  make -j32
-  make install
-
-
-  popd #src
-
-else
-  mkdir -p obj/tools
-fi
