@@ -50,6 +50,42 @@ https://distfiles.macports.org/musl/musl-1.2.5.tar.gz
 # plogin execs this -- does not depend on the loader.
 https://ftpmirror.gnu.org/bash/bash-5.3.tar.gz
 
+# The build tools, and the toolchain.
+#
+# None of these were here while packages were compiled on the host and staged
+# into obj/, because the host supplied them and the image only had to run
+# what came out. Building inside the chroot ended that: there is no host in
+# there, and coreutils stopped on a missing automake within four packages.
+#
+# pkgconf is the one that would have stopped everything. packages/common.sh
+# aims PKG_CONFIG_LIBDIR at the image, and nothing from libffi onward -- the
+# whole Wayland stack -- configures without it.
+#
+# bc and flex are wanted by other packages' build systems; libtool, autoconf
+# and automake by anything that regenerates its build system after a patch,
+# which is what coreutils does.
+https://distfiles.ariadne.space/pkgconf/pkgconf-2.5.1.tar.xz
+https://github.com/gavinhoward/bc/releases/download/7.0.3/bc-7.0.3.tar.xz
+https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz
+https://ftpmirror.gnu.org/libtool/libtool-2.5.4.tar.xz
+https://ftpmirror.gnu.org/autoconf/autoconf-2.72.tar.xz
+https://ftpmirror.gnu.org/automake/automake-1.18.1.tar.xz
+
+# binutils and gcc, so the image can rebuild itself rather than being
+# something only this workstation can produce. gmp, mpfr and mpc are gcc's
+# arithmetic libraries and are real packages here, unlike in chapters 5 and
+# 6 where they are unpacked inside the gcc tree.
+#
+# These five are in wget-list-toolchain as well, which fetches them for the
+# chapters 5 and 6 cross compiler. Listing them twice is deliberate: a fresh
+# clone that only runs ./download.sh must still be able to build the image,
+# and download.sh skips a file it already has.
+https://sourceware.org/pub/binutils/releases/binutils-2.45.tar.xz
+https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.xz
+https://ftpmirror.gnu.org/mpfr/mpfr-4.2.2.tar.xz
+https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz
+https://ftpmirror.gnu.org/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz
+
 # the shell utilities
 https://ftpmirror.gnu.org/coreutils/coreutils-9.7.tar.xz
 https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-i18n-1.patch

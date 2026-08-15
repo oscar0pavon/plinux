@@ -16,6 +16,21 @@ musl
 # which matters because pinit execs plogin and plogin execs this.
 bash
 
+# autotools, before coreutils rather than anywhere more logical.
+#
+# coreutils applies a patch that touches tests/local.mk, which leaves
+# Makefile.in older than the Makefile.am it is generated from, so make runs
+# automake to bring it up to date and automake runs autoconf. On the build
+# host that always worked, because the host had both. In the chroot there is
+# no host, and coreutils stopped with "Error 127" -- command not found --
+# four packages into the build.
+#
+# Neither compiles anything; they are perl and shell. What they need at run
+# time is m4 and perl, which chapters 6 and 7 put in the chroot and which the
+# build host has anyway.
+autoconf
+automake
+
 coreutils
 
 # the text tools every shell script reaches for. musl, like coreutils:
@@ -62,6 +77,39 @@ zstd
 ncurses
 readline
 libxcrypt
+
+# The build tools and the toolchain, which the build host used to supply and
+# the image therefore never had.
+#
+# Here rather than earlier because bc links readline, and readline is two
+# lines up. Everything else in this tier could sit anywhere after glibc.
+#
+# pkgconf first, and it is the one that matters most: packages/common.sh
+# aims PKG_CONFIG_LIBDIR at the image, and nothing from libffi onward -- the
+# entire Wayland stack -- configures without a pkg-config to ask.
+pkgconf
+bc
+flex
+
+# binutils before gcc, because gcc's configure probes whatever assembler and
+# linker it can find and enables its own features on the strength of the
+# answers. gmp, mpfr and mpc before gcc for the ordinary reason: it links
+# them. Unlike chapters 5 and 6, where those three are unpacked inside the
+# gcc tree, these are real packages and gcc finds them installed.
+#
+# This tier is what makes the image able to rebuild itself. Until it existed
+# the image could run what this workstation compiled and nothing else, and
+# packages/gcc-runtime.sh had to copy libstdc++ off the host because building
+# it meant building GCC.
+binutils
+gmp
+mpfr
+mpc
+gcc
+
+# after gcc, because libtool records the compiler and linker it was
+# configured against
+libtool
 
 # udev's dependencies, then udev. All of these are glibc programs: their
 # libraries are linked into udev, so they have to agree on the C library.
