@@ -526,6 +526,23 @@ build_packages(){
       continue
     fi
 
+    # The tarballs are downloaded, not tracked, so a fresh clone has none --
+    # and a plain ./build.sh walks the packages now, so that clone reaches
+    # this loop rather than stopping at a step it was never told to run.
+    # Checked once, and only when there is something to build: a tree whose
+    # packages are all stamped needs no sources at all, which is the state
+    # "./build.sh clean" leaves behind.
+    if [ -z "${sources_checked}" ]; then
+      sources_checked=1
+
+      if ! ls "${sources_directory}"/*.tar.* > /dev/null 2>&1; then
+        status_stop
+        echo "no source tarballs in ${sources_directory}" >&2
+        echo "run ./download.sh all first; ./configure too, if src/linux is missing" >&2
+        exit 1
+      fi
+    fi
+
     echo "  ${package}"
     status_set "${package}   [${package_number}/${package_total}]"
 
