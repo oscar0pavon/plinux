@@ -54,6 +54,30 @@ echo "rootsbindir=/usr/sbin" > configparms
 
 make
 
+# LFS 8.5, two steps that only matter when the install goes to a real root.
+#
+# Neither was needed while this package only ever installed under DESTDIR:
+# glibc's install skips both paths when it is staging into a directory that
+# is not the running system. Installing into the chroot, where / is the
+# target, is the first time either has been reached.
+#
+# ld.so.conf: the install warns about it being absent. Harmless, and one
+# empty file quieter.
+mkdir -p "${build_directory}/etc"
+touch "${build_directory}/etc/ld.so.conf"
+
+# test-installation.pl: a post-install sanity check that links a program
+# against every library glibc believes it installed. It believes in libnsl
+# and libnss_dns, which a modern glibc does not build -- libnsl moved out of
+# glibc entirely and the nss_dns module is inside libc now -- so the check
+# fails on a correct installation. The book calls it "an outdated sanity
+# check that fails with a modern Glibc configuration" and replaces the perl
+# invocation with an echo.
+#
+# Anchored on $(PERL), which the sed removes, so a second run finds nothing
+# to do rather than nesting echoes.
+sed '/test-installation/s@$(PERL)@echo not running@' -i ../Makefile
+
 make DESTDIR="${build_directory}" install
 
 # make install stages the locale *sources* -- usr/share/i18n -- but compiles
