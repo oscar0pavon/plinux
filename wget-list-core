@@ -14,14 +14,37 @@
 # ./download.sh --list wget-list-sysv.
 #
 # Two things the build needs are not here, because they do not come from a
-# tarball: the kernel and pboot are git checkouts under src/. src/musl is a
-# third, unpacked by hand, with no recorded origin.
+# tarball: the kernel and pboot are git checkouts under src/, made by
+# ./configure.
+#
+# musl used to be a third. It sat in src/musl, unpacked by hand, with no
+# recorded origin -- which meant a fresh clone could not build the image and
+# nothing said so until packages/musl.sh failed on a missing directory. It is
+# a tarball like everything else now.
 
 # the C libraries. glibc first: udev is part of systemd and systemd does not
 # build against musl, so both are installed and every binary names the one
 # it wants.
 https://ftpmirror.gnu.org/glibc/glibc-2.42.tar.xz
 https://www.linuxfromscratch.org/patches/lfs/12.4/glibc-2.42-fhs-1.patch
+
+# musl 1.2.5, matching the /musl installation this workstation compiles the
+# p* components and bash against.
+#
+# Not from musl.libc.org, which is where it comes from and which does not
+# resolve from this machine -- wget stops at "unable to resolve host address"
+# while every other entry in this file downloads. The copy here is MacPorts'
+# distfiles mirror, which serves upstream's tarball under upstream's name.
+#
+# It is the same file: MacPorts' copy and Debian's musl_1.2.5.orig.tar.gz are
+# byte for byte identical, sha256 a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e
+# 4085d90102b8596fc7c75e4, which is upstream's published checksum. Two
+# distributors with no reason to agree is the best confirmation available
+# while the origin is unreachable. If MacPorts ever goes, Debian's pool has
+# the same bytes under a different name:
+#
+#   https://ftp.debian.org/debian/pool/main/m/musl/musl_1.2.5.orig.tar.gz musl-1.2.5.tar.gz
+https://distfiles.macports.org/musl/musl-1.2.5.tar.gz
 
 # the shell. Static against musl, so the login path -- pinit execs plogin,
 # plogin execs this -- does not depend on the loader.

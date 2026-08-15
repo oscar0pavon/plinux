@@ -10,7 +10,8 @@ set -e
 
 . "$(dirname "$(readlink -f "$0")")/common.sh"
 
-cd "${src_directory}/musl"
+directory=$(unpack 'musl-*.tar.gz' 'musl-1.2.5')
+cd "${directory}"
 
 # Built with the host compiler: musl-gcc is a wrapper around an existing musl
 # installation, so using it to build musl itself would be circular.

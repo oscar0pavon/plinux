@@ -109,3 +109,4 @@ src/foot/
 src/wmenu/
 
 src/pdaemon/pdaemon
+src/musl-*/
