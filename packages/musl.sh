@@ -27,7 +27,24 @@ cd "${src_directory}/musl"
 # path, so with both in /usr/lib whichever is built second destroys the
 # other's loader. Under /usr/lib/musl they never share a filename, and
 # $syslibdir/ld-musl-x86_64.so.1 still points at the real thing.
+#
+# --includedir is the same argument one directory over, and it was missing.
+# Two C libraries were describing themselves in one /usr/include: the header
+# set in the image was whichever of them installed last, plus whatever the
+# other one shipped that its rival does not. Four files outlived glibc that
+# way -- stropts.h, stddef.h, stdarg.h and bits/alltypes.h -- and stropts.h
+# is the one that bites, because glibc dropped it in 2.30 while musl still
+# has it. vim's configure found it, included it, and got musl's
+# "int ioctl(int, int, ...)" next to glibc's
+# "int ioctl(int, unsigned long, ...)".
+#
+# Nothing reads these at build time in any case: musl-gcc's specs name
+# /musl/include on the build machine with -nostdinc, and an absolute -isystem
+# path is not moved by --sysroot. They are in the image for completeness,
+# which is a poor reason to let them shadow the C library everything else
+# here is compiled against.
 CC=gcc ./configure --prefix=/usr \
+                   --includedir=/usr/include/musl \
                    --libdir=/usr/lib/musl \
                    --syslibdir=/usr/lib
 

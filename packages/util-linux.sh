@@ -19,7 +19,21 @@ export CC=gcc
 # login, nologin, su, chfn and chsh are disabled because plogin covers what
 # this system needs, and the rest want PAM. agetty still gets built; pgetty
 # replaces it, so it simply goes unused.
-./configure --bindir=/usr/bin     \
+#
+# --without-udev, and it cannot be otherwise: udev links libblkid and
+# libmount from here, so it is built after this package and its headers are
+# not in the image yet. The cycle is only optional on this side -- lsblk and
+# findmnt use libudev to read properties out of the udev database, and fall
+# back to probing the device with libblkid without it.
+#
+# Naming it matters because the default is to look, and looking escapes the
+# sysroot: AC_CHECK_LIB does not honour --sysroot, so configure found the
+# build machine's libudev, set HAVE_UDEV, and the compile then stopped on a
+# libudev.h that is not staged. Same for libmagic, which nothing here builds
+# at all.
+./configure --without-udev        \
+            --without-libmagic    \
+            --bindir=/usr/bin     \
             --libdir=/usr/lib     \
             --runstatedir=/run    \
             --sbindir=/usr/sbin   \

@@ -26,7 +26,26 @@ export CC=gcc
 # and <cstddef>, and the build stops on cursesw.o. The book's later snapshot
 # carries the fix. Nothing in this image is C++, so the binding is dropped
 # rather than patched -- libncurses++w is the only thing lost.
-./configure --prefix=/usr           \
+# cf_cv_header_stdbool_h=1 makes the installed curses.h include <stdbool.h>
+# instead of deciding it does not have to.
+#
+# The test behind that cache variable compiles "bool foo = false;" with no
+# include at all, and takes success to mean the compiler has bool built in
+# and curses.h needs no header for it. That is true of the compiler ncurses
+# is built with -- gcc 15 defaults to C23, where bool, true and false are
+# keywords -- and it is a statement about the *build*, which then gets
+# written into a header the whole image compiles against.
+#
+# Anything still on an older dialect then gets half a definition: curses.h
+# typedefs bool itself but leaves true and false to a header it did not
+# include. procps-ng is built -std=gnu99 by its own configure, and watch.c
+# stopped on "'false' undeclared" with gcc helpfully pointing at the header
+# ncurses had just decided against.
+#
+# Harmless where it was not needed: under C23 stdbool.h is empty of anything
+# new, and under C++ it defines nothing at all.
+./configure cf_cv_header_stdbool_h=1 \
+            --prefix=/usr           \
             --mandir=/usr/share/man \
             --with-shared           \
             --without-debug         \

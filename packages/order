@@ -40,6 +40,29 @@ zlib
 xz
 zstd
 
+# What util-linux links against, before util-linux rather than after it.
+#
+# These used to sit below, on the reasoning that they were "libraries
+# util-linux was already linked against but that nothing staged" -- which was
+# true, and was the symptom rather than the arrangement. util-linux was
+# finding the *build machine's* ncurses and readline, linking them, and being
+# followed by a staging step that put matching libraries in the image so the
+# programs could start. Nothing in that chain built util-linux against this
+# image.
+#
+# The sysroot ended it, and not gracefully: headers resolve inside obj now,
+# so configure still found the host's libreadline -- AC_CHECK_LIB does not
+# honour --sysroot -- enabled readline support on the strength of it, and
+# then fdisk.c stopped on a readline/readline.h that is not there. A missing
+# header is the good outcome; the same check passing against the host's
+# library is how the old order stayed invisible.
+#
+# ncurses first: readline links libncursesw rather than a separate termcap.
+# libxcrypt is here for sulogin.
+ncurses
+readline
+libxcrypt
+
 # udev's dependencies, then udev. All of these are glibc programs: their
 # libraries are linked into udev, so they have to agree on the C library.
 #
@@ -52,13 +75,6 @@ libcap
 openssl
 kmod
 udev
-
-# Libraries util-linux was already linked against but that nothing staged, so
-# the programs needing them could not start. Found with "./build.sh check".
-# ncurses first: readline links libncursesw rather than a separate termcap.
-ncurses
-readline
-libxcrypt
 
 # the editor and the pager. Both after ncurses, which they link for terminal
 # handling.
