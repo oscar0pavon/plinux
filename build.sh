@@ -772,7 +772,8 @@ chroot_mounts(){
        "${lfs_directory}/sys"     \
        "${lfs_directory}/run"     \
        "${lfs_directory}/sources" \
-       "${lfs_directory}/toolchain"
+       "${lfs_directory}/toolchain" \
+       "${lfs_directory}/packages"
 }
 
 chroot_mounted_any(){
@@ -819,7 +820,7 @@ chroot_mount(){
     exit 1
   fi
 
-  mkdir -p "${lfs_directory}"/{dev,proc,sys,run,sources,toolchain}
+  mkdir -p "${lfs_directory}"/{dev,proc,sys,run,sources,toolchain,packages}
 
   # LFS 7.3.1. The book bind-mounts the host's /dev rather than mounting a
   # devtmpfs, because it will not assume the host kernel has one. This one
@@ -869,6 +870,20 @@ chroot_mount(){
     mount --bind "${working_directory}/toolchain/chroot" "${lfs_directory}/toolchain"
     mount -o remount,bind,ro "${lfs_directory}/toolchain"
   fi
+
+  # packages/ as well, for chapter 8: the same scripts that build obj/, run
+  # inside here against /. Read-only like the others -- a package script is
+  # not supposed to write to its own directory, and if one tries, finding out
+  # by way of a failure is better than finding out by way of an edited
+  # repository.
+  if ! mountpoint -q "${lfs_directory}/packages"; then
+    mount --bind "${working_directory}/packages" "${lfs_directory}/packages"
+    mount -o remount,bind,ro "${lfs_directory}/packages"
+  fi
+
+  # Where packages unpack. /sources is the read-only bind of the tarballs, so
+  # it cannot be unpacked into the way packages/common.sh does outside.
+  mkdir -p "${lfs_directory}/sources-build"
 }
 
 # The chroot invocation itself, LFS 7.4.
@@ -988,8 +1003,119 @@ build_chroot(){
   echo "chapter 7 built in $(format_duration $((SECONDS - chroot_started)))"
 }
 
+# LFS chapter 8, which for plinux is packages/order run inside the chroot.
+#
+# The same scripts that build obj/, against / instead. packages/common.sh
+# notices PLINUX_IN_CHROOT and empties build_directory, which is all the
+# adaptation any of them needs: DESTDIR goes empty, the pkg-config paths
+# become the real ones, and the sysroot machinery switches off because there
+# is no longer a second tree for a search to escape into.
+#
+# Stamps are kept in lfs/.packages rather than obj/.packages, because a stamp
+# is a statement about the tree it was installed into and these are two
+# different trees. A package can be built in one and not the other.
+build_chroot_packages(){
+  local package_selector=${1:-}
+
+  chroot_mount
+  trap 'chroot_umount' EXIT
+
+  echo "Building packages into ${lfs_directory}"
+
+  local stamp_directory=${lfs_directory}/.packages
+  mkdir -p "${stamp_directory}"
+
+  local package_force=
+  local package_only=
+
+  case "${package_selector}" in
+    ''|verbose|quiet) ;;
+    force)            package_force=1 ;;
+    *)                package_only=${package_selector} ;;
+  esac
+
+  local package_total
+  package_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
+                    "${working_directory}/packages/order")
+
+  local package_number=0
+  local package_matched=
+  local package_have=0
+  local package_started=${SECONDS}
+
+  local status_was_active=${status_active}
+  [ -z "${status_was_active}" ] && status_start
+  status_set "starting"
+
+  while read -r package; do
+    case "${package}" in ''|\#*) continue ;; esac
+
+    package_number=$((package_number + 1))
+
+    if [ -n "${package_only}" ]; then
+      if [ "${package}" != "${package_only}" ]; then
+        continue
+      fi
+      package_matched=1
+    fi
+
+    if [ ! -x "${working_directory}/packages/${package}.sh" ]; then
+      status_stop
+      echo "  ${package}: no packages/${package}.sh" >&2
+      exit 1
+    fi
+
+    if [ -f "${stamp_directory}/${package}" ] &&
+       [ -z "${package_force}" ] && [ -z "${package_only}" ]; then
+      echo "  have ${package}"
+      package_have=$((package_have + 1))
+      continue
+    fi
+
+    echo "  ${package}"
+    status_set "chroot ${package}   [${package_number}/${package_total}]"
+
+    # PLINUX_IN_CHROOT is what packages/common.sh keys on. Passed here rather
+    # than set in chroot_run, so the chapter 7 steps -- which are the book's
+    # and know nothing about packages/common.sh -- do not see it.
+    if run "chroot-package-${package}" \
+         chroot "${lfs_directory}" /usr/bin/env -i    \
+           HOME=/root TERM="${TERM:-dumb}"            \
+           PATH=/usr/bin:/usr/sbin                    \
+           MAKEFLAGS="-j$(nproc)"                     \
+           PLINUX_IN_CHROOT=1                         \
+           /bin/bash "/packages/${package}.sh"; then
+      touch "${stamp_directory}/${package}"
+    else
+      status_set "chroot ${package}   FAILED"
+      status_stop
+      echo >&2
+      echo "${package} failed; the log is ${log_directory}/chroot-package-${package}.log" >&2
+      exit 1
+    fi
+  done < "${working_directory}/packages/order"
+
+  [ -z "${status_was_active}" ] && status_stop
+
+  if [ "${package_have}" -ne 0 ]; then
+    echo "  ${package_have} already installed"
+  fi
+
+  echo
+
+  if [ -n "${package_only}" ] && [ -z "${package_matched}" ]; then
+    echo "no such package: ${package_only}" >&2
+    exit 1
+  fi
+
+  echo "packages installed into ${lfs_directory} in $(format_duration $((SECONDS - package_started)))"
+}
+
 if [ "$1" == "chroot" ]; then
   case "${2:-}" in
+    packages)
+      build_chroot_packages "${3:-}"
+      ;;
     umount)
       if chroot_umount; then
         echo "unmounted"

@@ -66,10 +66,16 @@ make DESTDIR="${build_directory}" install
 # recommended") and all a one-user system whose files are ASCII and UTF-8
 # needs. The book's other recommendations are national locales.
 #
-# This is the host's localedef, writing the image's locale archive: the
-# compiled format is tied to the glibc version, and the host runs the same
-# 2.42 this package stages. I18NPATH points it at the sources staged above
-# rather than the host's copies all the same.
+# Outside the chroot this is the host's localedef writing the image's locale
+# archive, which works because the compiled format is tied to the glibc
+# version and the host runs the same 2.42 this package stages. Inside the
+# chroot it is the image's own localedef writing its own archive, which needs
+# no such argument. I18NPATH points at the sources staged above either way.
+#
+# --prefix is passed only when there is one. An empty build_directory means
+# the chroot, where the prefix is / and "--prefix=" is not a way of saying
+# that -- localedef takes it as an empty path and puts the archive somewhere
+# that is not /usr/lib/locale.
 mkdir -p "${build_directory}/usr/lib/locale"
 I18NPATH="${build_directory}/usr/share/i18n" \
-localedef --prefix="${build_directory}" -i C -f UTF-8 C.UTF-8
+localedef ${build_directory:+--prefix="${build_directory}"} -i C -f UTF-8 C.UTF-8

@@ -8,6 +8,38 @@ src_directory=${plinux_directory}/src
 build_directory=${plinux_directory}/obj
 sources_directory=${plinux_directory}/sources
 
+# Inside the chroot, every path below collapses to the real one.
+#
+# PLINUX_IN_CHROOT is set by "./build.sh chroot packages", which runs these
+# same scripts with lfs/ as /. There is no staging directory there because
+# there is nothing to stage away from: /usr *is* the target, so DESTDIR is
+# empty and "make install" installs.
+#
+# Emptying build_directory is the whole change, and that is not a trick -- it
+# is what the variable meant all along. Everything derived from it is already
+# written as "${build_directory}/usr/...", so with it empty they read
+# /usr/lib/musl, /usr/lib/pkgconfig, /usr/share/pkgconfig: correct inside the
+# chroot, and the same strings the sysroot machinery was constructing
+# approximations of outside it.
+#
+# The sysroot itself has to be switched off rather than emptied. An empty
+# --sysroot= is not "no sysroot", it is a sysroot of "", and gcc treats that
+# differently. PLINUX_SYSROOT=none is the existing way to say it and it
+# already means exactly this.
+#
+# Which leaves the point of the exercise: in the chroot none of that machinery
+# is doing anything, because there is no second tree for a search to escape
+# into. The --sysroot, the -L, the -rpath-link and the PKG_CONFIG_SYSROOT_DIR
+# below exist to make a native compiler on a host running this distribution
+# behave as though the host were not there. Inside the chroot it genuinely is
+# not there.
+if [ -n "${PLINUX_IN_CHROOT:-}" ]; then
+  src_directory=/sources-build
+  build_directory=
+  sources_directory=/sources
+  PLINUX_SYSROOT=none
+fi
+
 export MAKEFLAGS=${MAKEFLAGS:--j32}
 
 # Packages target musl, not the host glibc. musl itself overrides this, since
