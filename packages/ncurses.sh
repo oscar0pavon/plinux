@@ -85,3 +85,17 @@ ln -sfv libncursesw.so "${build_directory}/usr/lib/libcurses.so"
 # pointing the name at it satisfies both the loader and every symbol.
 ln -sfv libncursesw.so.6 "${build_directory}/usr/lib/libtinfo.so.6"
 ln -sfv libncursesw.so   "${build_directory}/usr/lib/libtinfo.so"
+
+# And tinfo.pc, which is the same claim made to pkg-config rather than to the
+# linker, and was missing.
+#
+# The libtinfo.so symlink above is what readline's configure finds when it
+# looks for the termcap functions, so readline records "Requires.private:
+# tinfo" in its own readline.pc. Nothing then described tinfo to pkg-config,
+# so anything asking "pkg-config --exists readline" got:
+#
+#   Package 'tinfo', required by 'readline', not found
+#
+# which is how iwd stopped, on a readline that is installed and works. Two
+# halves of one compatibility shim, and only the linker's half was here.
+ln -sfv ncursesw.pc "${build_directory}/usr/lib/pkgconfig/tinfo.pc"

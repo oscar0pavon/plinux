@@ -68,6 +68,7 @@ https://distfiles.ariadne.space/pkgconf/pkgconf-2.5.1.tar.xz
 https://github.com/gavinhoward/bc/releases/download/7.0.3/bc-7.0.3.tar.xz
 https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz
 https://ftpmirror.gnu.org/libtool/libtool-2.5.4.tar.xz
+https://ftpmirror.gnu.org/gperf/gperf-3.3.tar.gz
 https://ftpmirror.gnu.org/autoconf/autoconf-2.72.tar.xz
 https://ftpmirror.gnu.org/automake/automake-1.18.1.tar.xz
 
@@ -86,6 +87,34 @@ https://ftpmirror.gnu.org/mpfr/mpfr-4.2.2.tar.xz
 https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz
 https://ftpmirror.gnu.org/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz
 
+# python and the build systems written in it.
+#
+# meson is why these are here. kmod is configured with it, and so is most of
+# what follows -- wayland, libdrm, pixman, libinput, mesa, wlroots, sway.
+# Until now the host's meson ran and nobody noticed the image had none.
+#
+# meson installs through pip, so python has to be the chapter 8 one built
+# with ensurepip rather than chapter 7's --without-ensurepip copy, and
+# flit-core, packaging, wheel and setuptools are the build backends pip needs
+# when it is told --no-build-isolation. ninja is meson's backend and is
+# bootstrapped by python rather than built by meson, which is what keeps the
+# two from being circular.
+https://pypi.org/packages/source/f/flit-core/flit_core-3.12.0.tar.gz
+https://files.pythonhosted.org/packages/source/p/packaging/packaging-25.0.tar.gz
+https://pypi.org/packages/source/w/wheel/wheel-0.46.1.tar.gz
+https://pypi.org/packages/source/s/setuptools/setuptools-80.9.0.tar.gz
+https://github.com/ninja-build/ninja/archive/v1.13.1/ninja-1.13.1.tar.gz
+https://github.com/mesonbuild/meson/releases/download/1.8.3/meson-1.8.3.tar.gz
+
+# markupsafe and jinja2, for udev alone: systemd generates sources from
+# templates at build time and its meson.build imports jinja2 to check.
+https://pypi.org/packages/source/M/MarkupSafe/markupsafe-3.0.2.tar.gz
+https://pypi.org/packages/source/J/Jinja2/jinja2-3.1.6.tar.gz
+
+# Python itself. Also fetched by wget-list-toolchain for chapter 7, which
+# builds a temporary copy without pip; this is the one the image keeps.
+https://www.python.org/ftp/python/3.13.7/Python-3.13.7.tar.xz
+
 # the shell utilities
 https://ftpmirror.gnu.org/coreutils/coreutils-9.7.tar.xz
 https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-i18n-1.patch
@@ -103,6 +132,11 @@ https://ftpmirror.gnu.org/tar/tar-1.35.tar.xz
 # the compression libraries kmod reads modules with. All three are hard
 # dependencies of kmod whether or not a given module is compressed.
 https://zlib.net/fossils/zlib-1.3.1.tar.gz
+
+# bzip2, not for the image to link but for tar to read with: mtdev,
+# elfutils, pcre2 and dejavu-fonts all ship .tar.bz2.
+https://www.sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz
+https://www.linuxfromscratch.org/patches/lfs/12.4/bzip2-1.0.8-install_docs-1.patch
 https://github.com/tukaani-project/xz/releases/download/v5.8.1/xz-5.8.1.tar.xz
 https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
 

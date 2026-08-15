@@ -55,6 +55,11 @@ zlib
 xz
 zstd
 
+# bzip2 is not one of kmod's three; it is here because tar cannot unpack a
+# .tar.bz2 without it, and mtdev, elfutils, pcre2 and dejavu-fonts all ship
+# one. The build host had bzip2, so this only surfaced in the chroot.
+bzip2
+
 # What util-linux links against, before util-linux rather than after it.
 #
 # These used to sit below, on the reasoning that they were "libraries
@@ -91,6 +96,11 @@ pkgconf
 bc
 flex
 
+# gperf generates the lookup tables udev matches its rules with. systemd's
+# meson.build makes it a hard requirement and stops at configure time
+# without it.
+gperf
+
 # binutils before gcc, because gcc's configure probes whatever assembler and
 # linker it can find and enables its own features on the strength of the
 # answers. gmp, mpfr and mpc before gcc for the ordinary reason: it links
@@ -121,7 +131,45 @@ attr
 acl
 libcap
 openssl
+
+# python, and the build systems written in it.
+#
+# meson is the reason this tier exists and it is not optional: kmod on the
+# next line is configured with it, and so is nearly everything after --
+# wayland, wayland-protocols, libdrm, pixman, libinput, libdisplay-info,
+# libxkbcommon, mesa, wlroots, sway. Until now the build host's meson ran
+# them all and nobody noticed the image had none, which is the same story as
+# pkgconf and automake.
+#
+# expat first, and it moved up from beside dbus to get here: python is built
+# --with-system-expat, and would otherwise use the copy bundled in its own
+# tarball. Nothing else cared where expat sat.
+#
+# Then python -- the one with pip, unlike chapter 7's --without-ensurepip
+# copy -- and the four modules pip needs as build backends before it will
+# install anything with --no-build-isolation.
+#
+# ninja before meson, and bootstrapped by python rather than built by meson.
+# That is what keeps the two from being circular: ninja needs a C++ compiler
+# and a python, meson needs ninja to build anything at all.
+expat
+python
+flit-core
+packaging
+wheel
+setuptools
+ninja
+meson
+
 kmod
+
+# markupsafe and jinja2 before udev, and for udev alone. systemd generates
+# several of its sources from templates at build time, and its meson.build
+# checks for the module by importing it: "python3 is missing modules:
+# jinja2" is where the build stopped.
+markupsafe
+jinja2
+
 udev
 
 # the editor and the pager. Both after ncurses, which they link for terminal
@@ -142,10 +190,10 @@ dosfstools
 # process monitoring. After ncurses, which top and watch link against.
 procps-ng
 
-# the message bus, and the XML parser it reads its configuration with.
-# Not LFS packages: the book builds no D-Bus, it only creates the messagebus
-# user. iwd will not start without a system bus, and seatd and sway want one.
-expat
+# the message bus. Not an LFS package: the book builds no D-Bus, it only
+# creates the messagebus user. iwd will not start without a system bus, and
+# seatd and sway want one. expat, which it reads its configuration with, has
+# moved up to the python tier -- python is built --with-system-expat.
 dbus
 
 # still to come, roughly in this order:
@@ -201,11 +249,35 @@ libinput
 
 # Tier 4 prerequisites.
 #
-# gcc-runtime is libstdc++, libgcc_s and libgomp, copied from the host
-# toolchain because building them means building GCC. mesa is the first C++
-# package here, and it enables OpenMP unconditionally. elfutils is here only
-# for libelf, which mesa's meson.build hard-requires for radeonsi.
-gcc-runtime
+# gcc-runtime used to be here: libstdc++, libgcc_s and libgomp copied out of
+# the host toolchain, "because building them means building GCC". GCC is
+# built now, four tiers up, and installs all three itself -- so the copy had
+# nothing left to do and said so plainly when it ran in the chroot:
+#
+#   install: '/usr/lib/libgcc_s.so.1' and '/usr/lib/libgcc_s.so.1'
+#            are the same file
+#
+# gcc -print-file-name pointed at the destination, because the destination is
+# now where the real library lives. Retired rather than guarded.
+#
+# mesa is the first C++ package here and enables OpenMP unconditionally, which
+# is what libgomp was for. elfutils is here only for libelf, which mesa's
+# meson.build hard-requires for radeonsi.
+#
+# cmake and glslang are mesa's too, and only for its Vulkan driver:
+# meson.build makes glslangValidator a hard requirement whenever a Vulkan
+# driver is enabled, glslang builds with nothing but cmake, and cmake
+# bootstraps itself so it can go first. Both were supplied by the build host
+# until mesa was configured somewhere the host does not exist.
+cmake
+glslang
+
+# The two python modules mesa generates its own source with, and refuses to
+# configure without: mako builds the GL dispatch tables and driver entry
+# points, PyYAML reads the driver and pixel format descriptions. markupsafe,
+# which mako needs, is already built for jinja2 further up.
+mako
+pyyaml
 elfutils
 
 # libglvnd before mesa: mesa has to know at configure time whether it is the
