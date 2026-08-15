@@ -362,6 +362,7 @@ if [ "$1" == "check" ]; then
   echo "Checking installed binaries against the image's libraries"
 
   unresolved=0
+  mixed=0
   checked=0
 
   for binary in ${build_directory}/usr/bin/* ${build_directory}/usr/sbin/* \
@@ -373,10 +374,43 @@ if [ "$1" == "check" ]; then
 
     checked=$((checked + 1))
 
-    for library in $(readelf -d "${binary}" 2>/dev/null |
-                     sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+    needed=$(readelf -d "${binary}" 2>/dev/null |
+             sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+
+    # Two C libraries in one image means a binary can name one and be loaded
+    # by the other, and the check above cannot see it: both libc.so.6 and
+    # musl's loader are present, so every name resolves and the program still
+    # dies at startup. This is not hypothetical -- it is what LDFLAGS did to
+    # every musl package for as long as obj/usr/lib came first on the link
+    # line, since that is where glibc's libc.so is.
+    interpreter=$(readelf -l "${binary}" 2>/dev/null |
+                  sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p')
+
+    case "${interpreter}" in
+      *ld-musl*)
+        if grep -q '^libc\.so\.6$' <<< "${needed}"; then
+          echo "  ${binary#${build_directory}} is musl but needs glibc's libc.so.6"
+          mixed=$((mixed + 1))
+        fi
+        ;;
+      *ld-linux*)
+        if grep -qx 'libc\.so' <<< "${needed}"; then
+          echo "  ${binary#${build_directory}} is glibc but needs musl's libc.so"
+          mixed=$((mixed + 1))
+        fi
+        ;;
+    esac
+
+    for library in ${needed}; do
       # the loader itself is named by absolute path and lives in /usr/lib
       case "${library}" in ld-*) continue ;; esac
+
+      # musl's libc.so is its loader, which is already mapped by the time a
+      # NEEDED is looked at; it lives in /usr/lib/musl and is resolved by
+      # name rather than found on the search path
+      if [ "${library}" == "libc.so" ] && [ -e "${build_directory}/usr/lib/musl/libc.so" ]; then
+        continue
+      fi
 
       if [ ! -e "${build_directory}/usr/lib/${library}" ]; then
         echo "  ${binary#${build_directory}} needs ${library}"
@@ -387,6 +421,12 @@ if [ "$1" == "check" ]; then
 
   echo
   echo "checked ${checked} binaries"
+
+  if [ "${mixed}" -ne 0 ]; then
+    echo "${mixed} binary(s) mix the two C libraries" >&2
+    echo "those were linked against the wrong libc and cannot start" >&2
+    exit 1
+  fi
 
   if [ "${unresolved}" -ne 0 ]; then
     echo "${unresolved} unresolved dependencies" >&2

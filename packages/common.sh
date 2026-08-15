@@ -12,7 +12,33 @@ export MAKEFLAGS=${MAKEFLAGS:--j32}
 
 # Packages target musl, not the host glibc. musl itself overrides this, since
 # building a C library with itself is circular.
-export CC=${CC:-musl-gcc}
+#
+# The -L is part of the compiler and not of LDFLAGS below, which is the whole
+# point of writing it here. LDFLAGS puts obj/usr/lib first, and obj/usr/lib is
+# where *glibc* installs libc.so. musl-gcc's specs do add -L/musl/lib, but gcc
+# places LDFLAGS ahead of the paths the specs contribute, so "-lc" in a musl
+# build resolved to glibc: the link pulled in obj/usr/lib/libc.so, which is
+# glibc's linker script, and through it the build machine's own libc.so.6.
+#
+# Both halves of that are wrong and neither is loud. The binary comes out
+# asking for the musl loader while naming libc.so.6, which cannot run --
+# and "./build.sh check" passes it, because libc.so.6 *is* in the image.
+# Worse, every configure test links the same way, so the package is told it
+# has whatever glibc has. That is what stopped the build in coreutils:
+# AC_CHECK_FUNC(error) succeeded against glibc, musl has no error() and no
+# error.h, and gnulib duly left error() undeclared in the one file that
+# calls it.
+#
+# Carried on CC because common.sh is sourced before a package says
+# "export CC=gcc". Anything exported here by name -- LDFLAGS, LIBRARY_PATH --
+# would reach the glibc packages too and point their -lc at musl, which is
+# the same bug with the libraries swapped. Attached to the compiler it goes
+# away the moment the compiler does.
+#
+# The image's musl rather than the host's /musl/lib, for the same reason
+# everything else here builds against obj. If musl is not staged yet the
+# directory simply does not exist, and the specs' -L/musl/lib catches it.
+export CC=${CC:-musl-gcc -L${build_directory}/usr/lib/musl}
 
 # Built for the machine that builds them. This is a personal system, so the
 # image only ever runs on this i9-14900K or in the VM, and the VM is started
