@@ -49,9 +49,11 @@ Usage: ./build.sh [command]
 Builds plinux into obj/, which is the staged root filesystem.
 
 Commands:
-  (none)      Build this project's own components: pboot, kernel, pinit,
-              pgetty, plogin and bash, installing each into obj/. The LFS
-              packages are a separate step, see "packages" below
+  (none)      Build everything into obj/: this project's own components --
+              pboot, the kernel, pinit, pdaemon, pgetty, plogin -- then any
+              package in packages/order not yet installed, then sys/ on top.
+              The stamps keep the package walk cheap, so with the packages
+              built this is the quick component build it always was
   virt        Copy obj/ and the bootloader into virtual_machine/disk.raw.
               Builds nothing, so run a plain ./build.sh first if any
               source changed
@@ -139,6 +141,20 @@ mkdir -p "${log_directory}"
 failed=0
 skipped=0
 
+# Seconds into "4m07s". Every build step reports how long it took and the
+# build its total, because "the packages take about 40 minutes" was measured
+# once by hand and then repeated from memory: a build that prints its own
+# times is one that can say when it got slower.
+format_duration(){
+  local total=$1
+
+  if [ "${total}" -ge 60 ]; then
+    printf '%dm%02ds' $((total / 60)) $((total % 60))
+  else
+    printf '%ds' "${total}"
+  fi
+}
+
 # Output goes to a log rather than /dev/null, and only the tail is shown when
 # something breaks. Discarding it meant a failed build was reported as nothing
 # more than the "cp" that came after it.
@@ -146,6 +162,7 @@ run(){
   local name=$1
   shift
 
+  local started=${SECONDS}
   local status
 
   if [ -n "${verbose}" ]; then
@@ -160,6 +177,8 @@ run(){
   fi
 
   if [ "${status}" -eq 0 ]; then
+    # the log name doubles as the step name; packages arrive as package-<name>
+    echo "  ${name#package-}: $(format_duration $((SECONDS - started)))"
     return 0
   fi
 
@@ -348,7 +367,19 @@ if [ "$1" == "check" ]; then
   exit
 fi
 
-if [ "$1" == "packages" ]; then
+# The packages walk, shared by "./build.sh packages" and the plain build,
+# which runs it after the components so that one command produces the whole
+# image.
+#
+# The first argument selects what to rebuild: empty for whatever is not
+# stamped, "force" for everything, a package name for just that one.
+# "brief" as the second collapses the per-package "have" lines into one
+# count; the plain build passes it, because 68 lines of "have" would bury
+# the component output around them.
+build_packages(){
+  local package_selector=${1:-}
+  local package_brief=${2:-}
+
   echo "Building packages"
 
   # A package that installed successfully leaves a stamp, so a rerun picks up
@@ -360,27 +391,37 @@ if [ "$1" == "packages" ]; then
   # meant "clean all" removed obj and left the stamps behind, so every package
   # reported "have" while the tree stayed empty. The leading dot keeps them
   # out of the "cp -a obj/*" that populates the image.
-  stamp_directory=${build_directory}/.packages
+  local stamp_directory=${build_directory}/.packages
   mkdir -p "${stamp_directory}"
 
-  # The second argument selects what to rebuild: "force" for everything, a
-  # package name for just that one. verbose and quiet are not names, they are
-  # the output setting handled above.
-  package_force=
-  package_only=
+  # verbose and quiet are not selectors, they are the output setting handled
+  # above, passed through when the command line reads "packages quiet"
+  local package_force=
+  local package_only=
 
-  case "${2:-}" in
+  case "${package_selector}" in
     ''|verbose|quiet) ;;
     force)            package_force=1 ;;
-    *)                package_only=$2 ;;
+    *)                package_only=${package_selector} ;;
   esac
 
+  local package_total
   package_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
                     "${working_directory}/packages/order")
-  package_number=0
-  package_matched=
 
-  status_start
+  local package_number=0
+  local package_matched=
+  local package_have=0
+  local package_failed=0
+  local packages_started=${SECONDS}
+  local script
+
+  # In the plain build the components have already put the status line up;
+  # only start (and later stop) one here when running standalone, so the
+  # line survives into the steps that follow the walk.
+  local status_was_active=${status_active}
+
+  [ -z "${status_was_active}" ] && status_start
   status_set "starting"
 
   while read -r package; do
@@ -400,13 +441,17 @@ if [ "$1" == "packages" ]; then
 
     if [ ! -x "${script}" ]; then
       echo "  ${package}: no ${script}" >&2
-      failed=$((failed + 1))
+      package_failed=$((package_failed + 1))
       continue
     fi
 
     if [ -f "${stamp_directory}/${package}" ] &&
        [ -z "${package_force}" ] && [ -z "${package_only}" ]; then
-      echo "  have ${package}"
+      if [ -n "${package_brief}" ]; then
+        package_have=$((package_have + 1))
+      else
+        echo "  have ${package}"
+      fi
       continue
     fi
 
@@ -416,7 +461,7 @@ if [ "$1" == "packages" ]; then
     if run "package-${package}" "${script}"; then
       touch "${stamp_directory}/${package}"
     else
-      failed=$((failed + 1))
+      package_failed=$((package_failed + 1))
       status_set "${package}   [${package_number}/${package_total}]   FAILED"
       # later packages link against earlier ones, so carrying on would only
       # produce a second, more confusing failure
@@ -424,7 +469,11 @@ if [ "$1" == "packages" ]; then
     fi
   done < "${working_directory}/packages/order"
 
-  status_stop
+  [ -z "${status_was_active}" ] && status_stop
+
+  if [ "${package_have}" -ne 0 ]; then
+    echo "  ${package_have} already installed"
+  fi
 
   echo
 
@@ -435,12 +484,16 @@ if [ "$1" == "packages" ]; then
     exit 1
   fi
 
-  if [ "${failed}" -ne 0 ]; then
-    echo "${failed} package(s) failed; logs are in ${log_directory}" >&2
+  if [ "${package_failed}" -ne 0 ]; then
+    echo "${package_failed} package(s) failed; logs are in ${log_directory}" >&2
     exit 1
   fi
 
-  echo "packages installed into ${build_directory}"
+  echo "packages installed into ${build_directory} in $(format_duration $((SECONDS - packages_started)))"
+}
+
+if [ "$1" == "packages" ]; then
+  build_packages "${2:-}"
   exit
 fi
 
@@ -944,6 +997,12 @@ fi
 # predated the fhs patch and the configparms rootsbindir the package sets.
 
 
+# The packages, after the components: one plain ./build.sh produces the
+# whole image now. After rather than before, because the thing most
+# recently edited is almost always a component, and its build -- or its
+# failure -- should surface first, not behind a walk of the order file.
+build_packages "" brief
+
 echo "Installing system configuration"
 status_set "Installing system configuration"
 
@@ -963,10 +1022,10 @@ mkdir -p ${build_directory}/etc
 #   file here used to mean adding a cp line as well, which is why it held
 #   only passwd, group and fstab
 #
-# Copied last so the machine's version wins over a package default of the
-# same name. Note that packages only build when asked for ("./build.sh
-# packages"), so running that after a plain build puts the package defaults
-# back on top; run the plain build again afterwards.
+# Copied last, after the components and the packages both, so the machine's
+# version wins over a package default of the same name. A bare "./build.sh
+# packages" can still put a default back on top; the next plain build fixes
+# it.
 #
 # What is in there today:
 #   passwd, group  without a user database getpwuid(0) fails and bash's \u
@@ -1004,7 +1063,7 @@ if [ "${failed}" -ne 0 ]; then
   exit 1
 fi
 
-echo "SUCCESS you have plinux"
+echo "SUCCESS you have plinux in $(format_duration ${SECONDS})"
 exit
 
 

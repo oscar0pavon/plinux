@@ -43,7 +43,7 @@ cd plinux
 ./configure              # clone src/linux and src/pboot, install the kernel config
 ./download.sh all        # fetch every source into sources/
 ./build.sh packages      # the 68 packages in packages/order, into obj/
-./build.sh               # pboot, kernel, pinit, pgetty, plogin
+./build.sh               # pboot, kernel, p* components -- and any packages still unbuilt
 ./build.sh check         # find binaries whose libraries the image lacks
 sudo ./build.sh virt     # write virtual_machine/disk.raw
 ./run                    # boot it
@@ -128,9 +128,14 @@ rather than starting over. This is the long step, about 40 minutes on 32
 threads.
 
 **`./build.sh`** builds this project's own components — pboot, the kernel,
-pinit, pgetty and plogin — and stages `sys/` on top. It is a separate
-step from `packages` on purpose: the components change often and rebuild in
-minutes, the packages almost never change.
+pinit, pgetty and plogin — then walks the package order itself, and stages
+`sys/` on top of everything, so the machine's configuration wins over any
+package default. Run alone it therefore produces the whole image; after the
+`packages` step above it is the quick component build, because the stamps
+reduce the walk to a count of what is already installed. The components come
+first because they are what changes day to day, and an error there should
+surface immediately. Every step prints how long it took, and the build its
+total.
 
 **`./build.sh check`** reads the `NEEDED` entries of every binary in `obj/`
 and reports any whose libraries are not in the image. Run it after both build
@@ -180,7 +185,7 @@ like a broken compiler but is only a missing interpreter.
 
 ```sh
 ./build.sh help          # all commands
-./build.sh               # this project's own components
+./build.sh               # everything: components, then any unbuilt packages
 ./build.sh packages      # the packages in packages/order
 ./build.sh virt          # copy obj/ into virtual_machine/disk.raw
 ./build.sh usb /dev/sdX  # write obj/ to a USB disk as a bootable rescue system

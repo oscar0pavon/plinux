@@ -20,7 +20,7 @@ targets also install onto the workstation.
 ## Commands
 
 ```sh
-./build.sh                    # this project's components: pboot, kernel, pinit, pgetty, plogin + stage sys/
+./build.sh                    # everything: components (pboot, kernel, p*), then unbuilt packages, sys/ last
 ./build.sh packages           # walk packages/order; skips packages stamped in obj/.packages
 ./build.sh packages <name>    # rebuild one package (ignores its stamp)
 ./build.sh packages force     # rebuild all
