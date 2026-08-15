@@ -99,6 +99,18 @@ Commands:
                 toolchain <name>  rebuild just that step
                 toolchain force   rebuild all of them
 
+  chroot      Mount the virtual kernel filesystems into lfs/ and chroot into
+              it, per LFS 7.3 and 7.4. Needs root. sources/ and
+              toolchain/chroot/ are bind mounted read-only inside so the
+              tarballs and step scripts are reachable. The mounts come back
+              down on every exit path, and "clean" refuses to run while any
+              of them is up
+
+                chroot            interactive shell in lfs/
+                chroot build      run toolchain/chroot/order inside it
+                chroot <name>     run just that step
+                chroot umount     take the mounts down by hand
+
   help        This message
 
 Notes:
@@ -122,7 +134,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|usb|clean|toolchain|packages|check|verbose|quiet) ;;
+  ""|virt|usb|clean|toolchain|chroot|packages|check|verbose|quiet) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -733,6 +745,265 @@ if [ "$1" == "toolchain" ]; then
   exit
 fi
 
+# LFS chapter 7: the chroot.
+#
+# Everything above this point builds *for* lfs/ from the outside. From here on
+# the work happens inside it, with lfs/ as / and the host kernel the only
+# thing still shared. That is the whole point of the exercise -- there is no
+# host /usr to find any more, because there is no host.
+#
+# The mounts are the dangerous part of this file. A bind mount of /dev inside
+# a directory this repository also deletes things in is worth being careful
+# about, so:
+#
+#   - only what LFS 7.3 lists is mounted, plus two read-only binds so the
+#     scripts and tarballs are reachable from inside
+#   - the repository is mounted read-only, so nothing in the chroot can write
+#     back out into it
+#   - unmounting is checked rather than hoped for, runs in reverse order, and
+#     happens on every exit path including a failed build
+#   - "clean" refuses to run while any of it is mounted
+chroot_mounts(){
+  # Reverse order of mounting: dev/shm and dev/pts sit inside dev.
+  echo "${lfs_directory}/dev/shm" \
+       "${lfs_directory}/dev/pts" \
+       "${lfs_directory}/dev"     \
+       "${lfs_directory}/proc"    \
+       "${lfs_directory}/sys"     \
+       "${lfs_directory}/run"     \
+       "${lfs_directory}/sources" \
+       "${lfs_directory}/toolchain"
+}
+
+chroot_mounted_any(){
+  local point
+  for point in $(chroot_mounts); do
+    if mountpoint -q "${point}" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+chroot_umount(){
+  local point
+  local status=0
+
+  for point in $(chroot_mounts); do
+    if mountpoint -q "${point}" 2>/dev/null; then
+      if ! umount "${point}" 2>/dev/null; then
+        # A second try after a moment: something in the chroot may still be
+        # exiting and holding a file open.
+        sleep 1
+        if ! umount "${point}" 2>/dev/null; then
+          echo "cannot unmount ${point}" >&2
+          echo "something is still using it; lsof +f -- ${point}" >&2
+          status=1
+        fi
+      fi
+    fi
+  done
+
+  return ${status}
+}
+
+chroot_mount(){
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "the chroot needs root: it mounts /dev, /proc and /sys into lfs/" >&2
+    exit 1
+  fi
+
+  if [ ! -x "${lfs_directory}/usr/bin/bash" ]; then
+    echo "no ${lfs_directory}/usr/bin/bash" >&2
+    echo "chapters 5 and 6 have to finish first: ./build.sh toolchain" >&2
+    exit 1
+  fi
+
+  mkdir -p "${lfs_directory}"/{dev,proc,sys,run,sources,toolchain}
+
+  # LFS 7.3.1. The book bind-mounts the host's /dev rather than mounting a
+  # devtmpfs, because it will not assume the host kernel has one. This one
+  # does, but the bind is what the book specifies and it behaves identically
+  # here.
+  mountpoint -q "${lfs_directory}/dev" || mount --bind /dev "${lfs_directory}/dev"
+
+  # gid=5 is the tty group and mode=0620 is what grantpt() expects. Named by
+  # number because the host's tty group may have a different one, and it is
+  # the *chroot's* /etc/group that matters -- where 5 is tty, as written by
+  # the layout step.
+  mkdir -p "${lfs_directory}/dev/pts"
+  mountpoint -q "${lfs_directory}/dev/pts" ||
+    mount -t devpts devpts -o gid=5,mode=0620 "${lfs_directory}/dev/pts"
+
+  mountpoint -q "${lfs_directory}/proc" || mount -t proc  proc  "${lfs_directory}/proc"
+  mountpoint -q "${lfs_directory}/sys"  || mount -t sysfs sysfs "${lfs_directory}/sys"
+  mountpoint -q "${lfs_directory}/run"  || mount -t tmpfs tmpfs "${lfs_directory}/run"
+
+  # On a host where /dev/shm is a symlink into /run, the bind above already
+  # brought the link across and only the directory it names has to exist.
+  # Where it is a real mount point, the bind gave us an empty directory and a
+  # tmpfs has to go on it.
+  if [ -h "${lfs_directory}/dev/shm" ]; then
+    install -d -m 1777 "${lfs_directory}$(realpath /dev/shm)"
+  else
+    mkdir -p "${lfs_directory}/dev/shm"
+    mountpoint -q "${lfs_directory}/dev/shm" ||
+      mount -t tmpfs -o nosuid,nodev tmpfs "${lfs_directory}/dev/shm"
+  fi
+
+  # The two read-only binds. Not in the book, which has you copy the tarballs
+  # into $LFS/sources beforehand; this keeps the one copy that already exists
+  # in the repository and makes the step scripts reachable by the same trick.
+  #
+  # Read-only in two steps because "mount --bind -o ro" does not actually
+  # apply ro on the first call -- the kernel needs the remount to set it. A
+  # writable bind of the repository into the chroot would let a mistaken rm in
+  # there reach the source tree, which is the sort of thing worth spending two
+  # syscalls to prevent.
+  if ! mountpoint -q "${lfs_directory}/sources"; then
+    mount --bind "${sources_directory}" "${lfs_directory}/sources"
+    mount -o remount,bind,ro "${lfs_directory}/sources"
+  fi
+
+  if ! mountpoint -q "${lfs_directory}/toolchain"; then
+    mount --bind "${working_directory}/toolchain/chroot" "${lfs_directory}/toolchain"
+    mount -o remount,bind,ro "${lfs_directory}/toolchain"
+  fi
+}
+
+# The chroot invocation itself, LFS 7.4.
+#
+# env -i again, for the same reason as chapter 5, and this time the book
+# agrees. Note what is *not* in PATH: /tools/bin. From here on the cross
+# toolchain is finished -- everything runs natively inside the chroot -- and
+# leaving it out is what makes that true rather than merely intended.
+chroot_run(){
+  chroot "${lfs_directory}" /usr/bin/env -i     \
+      HOME=/root                                \
+      TERM="${TERM:-dumb}"                      \
+      PS1='(lfs chroot) \u:\w\$ '               \
+      PATH=/usr/bin:/usr/sbin                   \
+      MAKEFLAGS="-j$(nproc)"                    \
+      TESTSUITEFLAGS="-j$(nproc)"               \
+      "$@"
+}
+
+build_chroot(){
+  local chroot_selector=${1:-}
+
+  chroot_mount
+
+  # Whatever happens below -- a failed build, a Ctrl-C, an exit from the
+  # interactive shell -- the mounts come back down.
+  trap 'chroot_umount' EXIT
+
+  if [ "${chroot_selector}" == "shell" ] || [ -z "${chroot_selector}" ]; then
+    echo "entering ${lfs_directory}; exit to unmount"
+    chroot_run /bin/bash --login
+    return
+  fi
+
+  echo "Building chapter 7 inside ${lfs_directory}"
+
+  local stamp_directory=${lfs_directory}/.toolchain
+  mkdir -p "${stamp_directory}"
+
+  local chroot_force=
+  local chroot_only=
+
+  case "${chroot_selector}" in
+    build|verbose|quiet) ;;
+    force)               chroot_force=1 ;;
+    *)                   chroot_only=${chroot_selector} ;;
+  esac
+
+  local chroot_total
+  chroot_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
+                   "${working_directory}/toolchain/chroot/order")
+
+  local chroot_number=0
+  local chroot_matched=
+  local chroot_have=0
+  local chroot_started=${SECONDS}
+
+  local status_was_active=${status_active}
+  [ -z "${status_was_active}" ] && status_start
+  status_set "starting"
+
+  while read -r step; do
+    case "${step}" in ''|\#*) continue ;; esac
+
+    chroot_number=$((chroot_number + 1))
+
+    if [ -n "${chroot_only}" ]; then
+      if [ "${step}" != "${chroot_only}" ]; then
+        continue
+      fi
+      chroot_matched=1
+    fi
+
+    if [ ! -x "${working_directory}/toolchain/chroot/${step}.sh" ]; then
+      status_stop
+      echo "  ${step}: no toolchain/chroot/${step}.sh" >&2
+      exit 1
+    fi
+
+    # chroot-<name>, so these stamps and logs do not collide with the
+    # chapter 5 and 6 ones of the same name -- util-linux is in both.
+    if [ -f "${stamp_directory}/chroot-${step}" ] &&
+       [ -z "${chroot_force}" ] && [ -z "${chroot_only}" ]; then
+      echo "  have ${step}"
+      chroot_have=$((chroot_have + 1))
+      continue
+    fi
+
+    echo "  ${step}"
+    status_set "chroot ${step}   [${chroot_number}/${chroot_total}]"
+
+    if run "chroot-${step}" chroot_run /bin/bash "/toolchain/${step}.sh"; then
+      touch "${stamp_directory}/chroot-${step}"
+    else
+      status_set "chroot ${step}   FAILED"
+      status_stop
+      echo >&2
+      echo "${step} failed; the log is ${log_directory}/chroot-${step}.log" >&2
+      exit 1
+    fi
+  done < "${working_directory}/toolchain/chroot/order"
+
+  [ -z "${status_was_active}" ] && status_stop
+
+  if [ "${chroot_have}" -ne 0 ]; then
+    echo "  ${chroot_have} already built"
+  fi
+
+  echo
+
+  if [ -n "${chroot_only}" ] && [ -z "${chroot_matched}" ]; then
+    echo "no such chroot step: ${chroot_only}" >&2
+    echo "steps are listed in ${working_directory}/toolchain/chroot/order" >&2
+    exit 1
+  fi
+
+  echo "chapter 7 built in $(format_duration $((SECONDS - chroot_started)))"
+}
+
+if [ "$1" == "chroot" ]; then
+  case "${2:-}" in
+    umount)
+      if chroot_umount; then
+        echo "unmounted"
+      else
+        exit 1
+      fi
+      ;;
+    *)
+      build_chroot "${2:-}"
+      ;;
+  esac
+  exit
+fi
+
 if [ "$1" == "packages" ]; then
   build_packages "${2:-}"
   exit
@@ -995,6 +1266,16 @@ FSTAB
 fi
 
 if [ "$1" == "clean" ]; then
+  # Never delete anything while the chroot's mounts are up. /dev is bind
+  # mounted into lfs/ at that point, and "clean all" removes obj/ rather than
+  # lfs/ -- but the margin between those two is not where this should be
+  # relying on getting a path right.
+  if chroot_mounted_any; then
+    echo "the chroot is still mounted; refusing to clean" >&2
+    echo "run ./build.sh chroot umount first" >&2
+    exit 1
+  fi
+
   echo "Cleaning source trees"
 
   for component in pboot linux pinit pgetty plogin; do
