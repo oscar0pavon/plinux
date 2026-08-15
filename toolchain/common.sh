@@ -163,6 +163,107 @@ fresh_build_dir(){
   echo "${tree}/${name}"
 }
 
+# Chapter 6 unpacks into src/cross/ rather than src/, and it has to.
+#
+# Eleven of chapter 6's packages are also packages in packages/order -- bash,
+# coreutils, sed, grep, gawk, findutils, diffutils, gzip, tar, xz -- and both
+# chapters build the same tarball. The difference is the compiler: chapter 6
+# cross-compiles with $LFS_TGT-gcc into $LFS, packages/ builds natively with
+# musl-gcc into obj/.
+#
+# Neither uses a separate build directory, because the book does not. So
+# sharing src/bash-5.3 between them means the second configure overwrites the
+# first's Makefile and config.status while the first's .o files are still
+# lying there, and make has no reason to rebuild the ones whose sources have
+# not changed. The result links objects from two different compilers and two
+# different C libraries, installs cleanly, and fails somewhere else entirely.
+#
+# That is the exact failure mode this whole chapter exists to make impossible,
+# so it would be a poor place to introduce it. Separate trees, and the cost is
+# disk that "clean" reclaims.
+cross_src_directory=${src_directory}/cross
+
+unpack_cross(){
+  local pattern=$1
+  local directory=$2
+  local archive
+
+  mkdir -p "${cross_src_directory}"
+
+  if [ -d "${cross_src_directory}/${directory}" ]; then
+    echo "already unpacked: cross/${directory}" >&2
+    echo "${cross_src_directory}/${directory}"
+    return 0
+  fi
+
+  archive=$(ls ${sources_directory}/${pattern} 2>/dev/null | head -1)
+
+  if [ -z "${archive}" ]; then
+    echo "no ${pattern} in ${sources_directory}; run ./download.sh --list wget-list-toolchain" >&2
+    return 1
+  fi
+
+  echo "unpacking ${archive##*/} into cross/" >&2
+
+  if ! tar -xf "${archive}" -C "${cross_src_directory}"; then
+    echo "cannot unpack ${archive}" >&2
+    return 1
+  fi
+
+  if [ ! -d "${cross_src_directory}/${directory}" ]; then
+    echo "${archive##*/} did not unpack to ${directory}" >&2
+    return 1
+  fi
+
+  echo "${cross_src_directory}/${directory}"
+}
+
+# The chapter 6 configure line.
+#
+# Almost every package in that chapter is configured identically:
+#
+#   ./configure --prefix=/usr --host=$LFS_TGT --build=$(<somewhere>/config.guess)
+#
+# and differs only in extra options and in where config.guess happens to live.
+# Seventeen copies of that with nothing to say about any of them would be
+# noise, so it is written once here and the per-package scripts carry only
+# what is actually specific to them.
+#
+# config.guess is located rather than named. The book spells the path out per
+# package -- build-aux/config.guess for m4, ./config.guess for ncurses,
+# support/config.guess for bash -- which is information about where a project
+# keeps its autotools files and not a decision anyone is making. Searching the
+# three known locations gets the same answer and does not go stale when a
+# package rearranges itself.
+#
+# --build is what makes this a cross-compile as far as autoconf is concerned:
+# it describes the machine doing the building, --host describes the machine
+# that will run the result, and a configure script that sees them differ stops
+# trying to run the programs it compiles. Without it, a test would execute an
+# $LFS_TGT binary on this workstation, which works by accident here -- same
+# architecture -- and would be answering the wrong question either way.
+cross_configure(){
+  local guess=
+
+  local candidate
+  for candidate in build-aux/config.guess config.guess support/config.guess; do
+    if [ -f "${candidate}" ]; then
+      guess=${candidate}
+      break
+    fi
+  done
+
+  if [ -z "${guess}" ]; then
+    echo "no config.guess in $(pwd)" >&2
+    return 1
+  fi
+
+  ./configure --prefix=/usr                \
+              --host="${LFS_TGT}"          \
+              --build="$(sh "${guess}")"   \
+              "$@"
+}
+
 # Apply a patch from sources/ unless it is already in.
 #
 # Same reversal test as packages/common.sh: a failed build leaves its tree

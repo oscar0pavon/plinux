@@ -22,3 +22,48 @@ https://ftpmirror.gnu.org/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz
 https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.xz
 https://ftpmirror.gnu.org/mpfr/mpfr-4.2.2.tar.xz
 https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz
+
+# Chapter 6, the temporary tools. Most of that chapter's packages are already
+# in wget-list-core -- bash, coreutils, sed, grep, gawk, findutils, diffutils,
+# gzip, tar and xz are all in the image too, and chapter 6 builds the same
+# tarballs -- so only what the console system does not already need is here.
+#
+# m4, file, make and patch are build tools rather than parts of the image.
+# They are in chapter 6 because chapter 8 cannot be built without them, and
+# chapter 7.13 deletes the temporary copies once the real ones exist.
+https://ftpmirror.gnu.org/m4/m4-1.4.20.tar.xz
+https://astron.com/pub/file/file-5.46.tar.gz
+https://ftpmirror.gnu.org/make/make-4.4.1.tar.gz
+https://ftpmirror.gnu.org/patch/patch-2.8.tar.xz
+
+# ncurses, and not the 6.5 release that wget-list-core carries.
+#
+# The book uses this dated snapshot and chapter 6 configures it
+# --with-cxx-shared. Plain 6.5 does not build its C++ binding under gcc 15 --
+# packages/ncurses.sh has the details and drops the binding with
+# --without-cxx-binding to get around it -- and the snapshot is where that is
+# fixed. Two different tarballs of the same version is unfortunate; building
+# the book's chapter with a package the book does not describe is worse.
+#
+# From the LFS package mirror rather than the URL the book prints. Upstream
+# publishes snapshots under archives/ncurses/current/, and "current" means
+# what it says: 20250809 has already rotated out of it and that URL is a 404,
+# which is how this entry failed the first time it was fetched. The mirror
+# pins the exact set of tarballs LFS 12.4 was released against, so it does not
+# move. If osuosl is ever unreachable the same file is on any LFS mirror under
+# lfs-packages/12.4/.
+https://ftp.osuosl.org/pub/lfs/lfs-packages/12.4/ncurses-6.5-20250809.tgz
+
+# Chapter 7, built inside the chroot. util-linux is already in wget-list-core;
+# these five are not in the image at all.
+#
+# They are the tools chapter 8's packages are configured and built *by* --
+# perl and python run configure scripts and generate sources, bison and
+# gettext are what half of GNU is written against, texinfo builds the info
+# pages -- rather than programs the finished system needs. Chapter 7.13
+# deletes /tools around them; these stay, and chapter 8 rebuilds them properly.
+https://ftpmirror.gnu.org/gettext/gettext-0.26.tar.xz
+https://ftpmirror.gnu.org/bison/bison-3.8.2.tar.xz
+https://www.cpan.org/src/5.0/perl-5.42.0.tar.xz
+https://www.python.org/ftp/python/3.13.7/Python-3.13.7.tar.xz
+https://ftpmirror.gnu.org/texinfo/texinfo-7.2.tar.xz

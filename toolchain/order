@@ -27,3 +27,52 @@ glibc
 # exists as of the line above. Chapter 6's binutils-pass2 and gcc-pass2 are
 # the first things to need it.
 libstdcxx
+
+# ---------------------------------------------------------------------------
+# LFS chapter 6: the temporary tools, cross-compiled by what chapter 5 built.
+#
+# These install into $LFS/usr rather than $LFS/tools, so they are in their
+# final place -- but they cannot be run yet, because they are target binaries
+# and this is still the host. Chapter 7 chroots and they become usable.
+#
+# The order inside this chapter is almost free: these are independent programs
+# and nothing here links against anything else here. It is the book's order,
+# which is alphabetical-ish with the two toolchain passes last, and the two
+# passes genuinely do come last because they are what chapter 7 needs to exist
+# before it can stop using $LFS/tools.
+# ---------------------------------------------------------------------------
+
+# the macro processor autoconf is built on.
+m4
+
+# terminal handling. The dated snapshot, not the 6.5 that packages/ncurses.sh
+# builds -- see toolchain/ncurses.sh. Builds a native tic first, because a
+# cross-compiled one cannot compile the terminfo database it is asked to.
+ncurses
+
+# the shell chapter 7 chroots into. Not the image's bash, which is static
+# against musl and is packages/bash.sh's business.
+bash
+
+coreutils
+diffutils
+
+# needs a native copy of itself to compile the magic database, so it builds
+# twice: once for this machine, once for the target.
+file
+
+findutils
+gawk
+grep
+gzip
+make
+patch
+sed
+tar
+xz
+
+# The toolchain, a second time, cross-compiled into $LFS/usr this time rather
+# than $LFS/tools. After these two the chroot has a compiler of its own and
+# chapter 7.13 can delete /tools.
+binutils-pass2
+gcc-pass2

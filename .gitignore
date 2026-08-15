@@ -14,6 +14,11 @@ src/binutils-*/
 src/gcc-*/
 src/linux-*/
 
+# chapter 6 unpacks here rather than into src/, because eleven of its packages
+# are also packages/ packages built from the same tarball with a different
+# compiler. toolchain/common.sh explains why sharing the tree is not an option.
+src/cross/
+
 src/pgetty/pgetty
 src/pinit/pinit
 
