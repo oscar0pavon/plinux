@@ -78,12 +78,29 @@ status_start(){
 }
 
 status_stop(){
+  ticker_stop
+
   [ -n "${status_active}" ] || return 0
   status_active=
 
   printf '\e[r'
   printf '\e[1;1H\e[2K'
   printf '\e[%d;1H' "${status_rows}"
+}
+
+# bash gives a background job started by a non-interactive shell an ignored
+# SIGINT, so Ctrl-C stops wget and runs the INT trap while the clock carries
+# on redrawing row 1 over the prompt of a script that has already exited.
+# Killed here because status_stop is what the traps call, and the kill in
+# fetch is the line an interrupt skips.
+status_ticker=
+
+ticker_stop(){
+  [ -n "${status_ticker}" ] || return 0
+
+  kill "${status_ticker}" 2>/dev/null
+  wait "${status_ticker}" 2>/dev/null
+  status_ticker=
 }
 
 status_set(){
@@ -220,12 +237,12 @@ download(){
     # restarting one costs nothing.
     fetch(){
       local started=${SECONDS}
-      local ticker=
       local status
 
       # The clock on the status line, redrawn once a second while wget has
       # the terminal. Started per attempt, so a fallback begins from zero
-      # and the host being tried is the one named.
+      # and the host being tried is the one named. The pid is global so
+      # status_stop can reach it when an interrupt skips the kill below.
       if [ -n "${status_active}" ]; then
         (
           while :; do
@@ -234,7 +251,7 @@ download(){
             sleep 1
           done
         ) &
-        ticker=$!
+        status_ticker=$!
       fi
 
       if [ -n "${rename}" ]; then
@@ -256,10 +273,7 @@ download(){
         status=$?
       fi
 
-      if [ -n "${ticker}" ]; then
-        kill "${ticker}" 2>/dev/null
-        wait "${ticker}" 2>/dev/null
-      fi
+      ticker_stop
 
       return ${status}
     }

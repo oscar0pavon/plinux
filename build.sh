@@ -164,7 +164,6 @@ run(){
 
   local started=${SECONDS}
   local status
-  local ticker=
 
   # While the step runs, redraw the status line once a second with the
   # step's elapsed time and the build's total. A forked loop rather than
@@ -172,6 +171,10 @@ run(){
   # itself has the terminal, so this is the only way the clock can move
   # while make has the foreground. In quiet mode it is the only sign of
   # life the terminal gives at all.
+  #
+  # The pid is global, not local: an interrupt leaves this function through
+  # the trap rather than through the kill below, and status_stop has to be
+  # able to find it.
   if [ -n "${status_active}" ]; then
     (
       while :; do
@@ -182,7 +185,7 @@ run(){
         sleep 1
       done
     ) &
-    ticker=$!
+    status_ticker=$!
   fi
 
   if [ -n "${verbose}" ]; then
@@ -196,10 +199,7 @@ run(){
     status=$?
   fi
 
-  if [ -n "${ticker}" ]; then
-    kill "${ticker}" 2>/dev/null
-    wait "${ticker}" 2>/dev/null
-  fi
+  ticker_stop
 
   if [ "${status}" -eq 0 ]; then
     # the log name doubles as the step name; packages arrive as package-<name>
@@ -243,12 +243,32 @@ status_start(){
 }
 
 status_stop(){
+  ticker_stop
+
   [ -n "${status_active}" ] || return 0
   status_active=
 
   printf '\e[r'                        # whole screen scrolls again
   printf '\e[1;1H\e[2K'                # wipe the status row
   printf '\e[%d;1H' "${status_rows}"
+}
+
+# The ticker is a background job, and bash gives a background job started by
+# a non-interactive shell an ignored SIGINT. Ctrl-C therefore kills whatever
+# is compiling, runs the INT trap, and leaves the clock running: it goes on
+# redrawing row 1 over the shell prompt of a script that has already exited,
+# and nothing left on screen says where it came from.
+#
+# Killed here rather than only where it is started, because that line is the
+# one an interrupt skips. status_stop is what all three traps call.
+status_ticker=
+
+ticker_stop(){
+  [ -n "${status_ticker}" ] || return 0
+
+  kill "${status_ticker}" 2>/dev/null
+  wait "${status_ticker}" 2>/dev/null
+  status_ticker=
 }
 
 # \e7 and \e8 save and restore the cursor, so writing the status does not
