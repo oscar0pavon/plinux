@@ -122,11 +122,35 @@ echo "rootsbindir=/usr/sbin" > configparms
 #
 # --disable-nscd
 #   The name service cache daemon, which glibc itself no longer uses.
+# libc_cv_cxx_link_ok=no is not in the book, and it is here because these
+# scripts can be re-run and the book's cannot.
+#
+# glibc's configure tests whether the C++ compiler can link a program, and
+# builds support/links-dso-program if it can. That program links C++, so it
+# needs libgcc_s -- the *shared* libgcc, which does not exist, because
+# gcc-pass1 is configured --disable-shared exactly as LFS 5.3 specifies.
+#
+# On a first run through the chapter the test answers no on its own: glibc is
+# built before libstdc++, $LFS_TGT-g++ has no C++ library to link against, and
+# configure skips the program. Build the chapter once and then rebuild glibc
+# alone -- "toolchain glibc", or "toolchain force" -- and libstdc++ is now
+# installed from the step *after* this one, the same test answers yes, and the
+# link fails on -lgcc_s.
+#
+# That is a step whose result depends on whether a later step has run, which
+# is the one thing a resumable build cannot have. Pinning the answer to the
+# one the book's ordering produces makes this step mean the same thing however
+# many times it is run and in whatever order.
+#
+# Nothing is lost: links-dso-program is test-support code, chapter 5 runs no
+# test suite, and packages/glibc.sh -- the native chapter 8 build, where
+# libgcc_s does exist -- is a separate script and is not touched by this.
 ../configure --prefix=/usr                      \
              --host="${LFS_TGT}"                \
              --build="$(../scripts/config.guess)" \
              --disable-nscd                     \
              libc_cv_slibdir=/usr/lib           \
+             libc_cv_cxx_link_ok=no             \
              --enable-kernel=5.4
 
 make
