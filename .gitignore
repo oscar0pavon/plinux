@@ -80,4 +80,15 @@ src/json-c-*/
 src/wlroots-*/
 src/sway-*/
 src/dejavu-fonts-*/
+
+# Tier 7, and the four that the "src/<name>-*/" pattern above does not cover.
+# Their tarballs come from forge tag URLs and unpack to a plain name -- the
+# scripts ask unpack() for "foot", not "foot-1.27.0" -- so there is no version
+# in the directory for a wildcard to match, and they sat untracked and
+# unignored, one "git add ." away from being committed as vendored source.
+src/tllist/
+src/fcft/
+src/foot/
+src/wmenu/
+
 src/pdaemon/pdaemon
