@@ -26,6 +26,72 @@ failed_log=${sources}/.failed
 tries=${LFS_TRIES:-3}
 timeout=${LFS_TIMEOUT:-30}
 
+# Separate from --timeout, which is the read timeout and is what a slow
+# transfer needs. Reaching a host that is simply not there costs the whole of
+# it, three times over, and ftpmirror.gnu.org is exactly that from here: 29
+# of the URLs below go through it, so the run spent a minute and a half per
+# GNU package waiting to be told what fallback_url already knows. Ten seconds
+# is generous for a TCP handshake and turns each of those into a quick fall
+# through to ftp.gnu.org.
+connect_timeout=${LFS_CONNECT_TIMEOUT:-10}
+
+# Seconds into "4m07s", the same shape build.sh reports its steps in.
+format_duration(){
+  local total=$1
+
+  if [ "${total}" -ge 60 ]; then
+    printf '%dm%02ds' $((total / 60)) $((total % 60))
+  else
+    printf '%ds' "${total}"
+  fi
+}
+
+# A line pinned to the top of the terminal, the way build.sh pins the package
+# being built: the scroll region is everything below row 1, so wget's own
+# progress bars scroll underneath without disturbing it.
+#
+# It exists because wget says nothing at all between being started and the
+# first byte arriving. A host that is not answering therefore looks exactly
+# like one that is: the file's name is printed, and then the terminal sits
+# there. With a clock on the line the difference is obvious, which matters
+# most on the one list entry that is going to fail.
+#
+# Only when stdout is a terminal; redirected to a file these escapes would be
+# noise in something worth keeping.
+status_active=
+status_text=
+
+status_start(){
+  [ -t 1 ] || return 0
+
+  status_rows=$(tput lines 2>/dev/null) || status_rows=${LINES:-24}
+  status_active=1
+
+  printf '\e[2;%dr' "${status_rows}"
+  printf '\e[%d;1H' "${status_rows}"
+
+  # a shell left holding a scroll region behaves as if its top line were
+  # stuck, so put it back however this exits, Ctrl-C included
+  trap status_stop EXIT
+  trap 'status_stop; exit 130' INT
+  trap 'status_stop; exit 143' TERM
+}
+
+status_stop(){
+  [ -n "${status_active}" ] || return 0
+  status_active=
+
+  printf '\e[r'
+  printf '\e[1;1H\e[2K'
+  printf '\e[%d;1H' "${status_rows}"
+}
+
+status_set(){
+  [ -n "${status_active}" ] || return 0
+  status_text=$1
+  printf '\e7\e[1;1H\e[2K\e[7m %s \e[0m\e8' "$1"
+}
+
 usage(){
   cat <<'USAGE'
 Usage: ./download.sh [command] [--list FILE]
@@ -120,6 +186,11 @@ download(){
   # before the loop reads it.
   tmp_failed=$(mktemp) || return 1
 
+  local started=${SECONDS}
+
+  status_start
+  status_set "starting"
+
   local n=0
   local rename
   while read -r url rename; do
@@ -142,25 +213,55 @@ download(){
     fi
 
     printf '[%3d/%3d] get  %s\n' "${n}" "${total}" "${name}"
+    status_set "${name}   [${n}/${total}]   ${url#https://}"
 
     # --continue only without a rename: wget refuses to resume into an
     # explicit -O target, and these archive URLs are small enough that
     # restarting one costs nothing.
     fetch(){
+      local started=${SECONDS}
+      local ticker=
+      local status
+
+      # The clock on the status line, redrawn once a second while wget has
+      # the terminal. Started per attempt, so a fallback begins from zero
+      # and the host being tried is the one named.
+      if [ -n "${status_active}" ]; then
+        (
+          while :; do
+            printf '\e7\e[1;1H\e[2K\e[7m %s   %s \e[0m\e8' \
+              "${status_text}" "$(format_duration $((SECONDS - started)))"
+            sleep 1
+          done
+        ) &
+        ticker=$!
+      fi
+
       if [ -n "${rename}" ]; then
         wget --tries="${tries}" \
              --timeout="${timeout}" \
+             --connect-timeout="${connect_timeout}" \
              --quiet --show-progress \
              -O "${sources}/${name}" \
              "$1"
+        status=$?
       else
         wget --continue \
              --tries="${tries}" \
              --timeout="${timeout}" \
+             --connect-timeout="${connect_timeout}" \
              --quiet --show-progress \
              --directory-prefix="${sources}" \
              "$1"
+        status=$?
       fi
+
+      if [ -n "${ticker}" ]; then
+        kill "${ticker}" 2>/dev/null
+        wait "${ticker}" 2>/dev/null
+      fi
+
+      return ${status}
     }
 
     alternate=$(fallback_url "${url}")
@@ -168,6 +269,7 @@ download(){
     if fetch "${url}"; then
       ok=$((ok + 1))
     elif [ -n "${alternate}" ] && printf '  retrying via %s\n' "${alternate}" \
+         && status_set "${name}   [${n}/${total}]   ${alternate#https://}" \
          && fetch "${alternate}"; then
       ok=$((ok + 1))
     else
@@ -180,10 +282,12 @@ download(){
     fi
   done < "${input}"
 
+  status_stop
+
   mv "${tmp_failed}" "${failed_log}"
 
   echo
-  echo "downloaded ${ok}, already present ${skipped}, failed ${bad}"
+  echo "downloaded ${ok}, already present ${skipped}, failed ${bad} in $(format_duration $((SECONDS - started)))"
 
   if [ "${bad}" -ne 0 ]; then
     echo "failed URLs written to ${failed_log}; rerun with: ./download.sh retry" >&2
