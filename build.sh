@@ -164,6 +164,26 @@ run(){
 
   local started=${SECONDS}
   local status
+  local ticker=
+
+  # While the step runs, redraw the status line once a second with the
+  # step's elapsed time and the build's total. A forked loop rather than
+  # anything cleverer: SECONDS keeps counting in a subshell, and the step
+  # itself has the terminal, so this is the only way the clock can move
+  # while make has the foreground. In quiet mode it is the only sign of
+  # life the terminal gives at all.
+  if [ -n "${status_active}" ]; then
+    (
+      while :; do
+        printf '\e7\e[1;1H\e[2K\e[7m %s   %s, build %s \e[0m\e8' \
+          "${status_text}" \
+          "$(format_duration $((SECONDS - started)))" \
+          "$(format_duration ${SECONDS})"
+        sleep 1
+      done
+    ) &
+    ticker=$!
+  fi
 
   if [ -n "${verbose}" ]; then
     # tee so the log is still written for later. The status has to come from
@@ -174,6 +194,11 @@ run(){
   else
     "$@" > "${log_directory}/${name}.log" 2>&1
     status=$?
+  fi
+
+  if [ -n "${ticker}" ]; then
+    kill "${ticker}" 2>/dev/null
+    wait "${ticker}" 2>/dev/null
   fi
 
   if [ "${status}" -eq 0 ]; then
@@ -227,9 +252,15 @@ status_stop(){
 }
 
 # \e7 and \e8 save and restore the cursor, so writing the status does not
-# disturb where the build output is being written
+# disturb where the build output is being written.
+#
+# The text is kept in status_text as well as printed, so the ticker in run()
+# can redraw the same line with the elapsed time appended.
+status_text=
+
 status_set(){
   [ -n "${status_active}" ] || return 0
+  status_text=$1
   printf '\e7\e[1;1H\e[2K\e[7m %s \e[0m\e8' "$1"
 }
 
