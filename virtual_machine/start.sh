@@ -6,14 +6,15 @@ usage(){
   cat <<'USAGE'
 Usage: ./run [headless]
 
-Boots virtual_machine/disk.raw under QEMU with a machine close to the
-workstation: q35, the host CPU, an NVMe disk, xHCI and virtio devices.
+Boots a raw disk image under QEMU with a machine close to the workstation:
+q35, the host CPU, an NVMe disk, xHCI and virtio devices.
 
   (none)      GTK window, with the console on the emulated display
   headless    No window; console on serial, which is what scripted runs
               and this session's boot tests use
 
 Environment:
+  IMAGE       disk image to boot            (default disk.raw)
   MEMORY      guest RAM                     (default 8G)
   CPUS        guest cpu count               (default 8)
   VGA         display device                (default virtio-vga-gl)
@@ -24,6 +25,19 @@ deliberately not set by default: /dev/sdb is whatever was plugged in last,
 and passing the wrong one through is not recoverable.
 USAGE
 }
+
+# Which image to boot. disk.raw is the one ./configure.sh makes by default,
+# and stays the default here, so nothing that used to work changes. It exists
+# because there is now more than one: a tree built the old way and a tree
+# built in the chroot do not have to be the same size, and keeping a known
+# good image while an unproven one is tested is worth a variable.
+image=${IMAGE:-disk.raw}
+
+if [ ! -e "${image}" ]; then
+  echo "${image} does not exist; create it with ./configure.sh" >&2
+  echo "  IMAGE=${image} SIZE_MB=4096 ./configure.sh" >&2
+  exit 1
+fi
 
 memory=${MEMORY:-8G}
 cpus=${CPUS:-8}
@@ -72,7 +86,7 @@ set -- \
   -smp "${cpus}" \
   -m "${memory}" \
   -bios ./uefi.bios \
-  -drive file=./disk.raw,format=raw,if=none,id=nvme0 \
+  -drive file="./${image}",format=raw,if=none,id=nvme0 \
   -device nvme,drive=nvme0,serial=plinux0 \
   -device qemu-xhci,id=xhci \
   -device virtio-keyboard-pci

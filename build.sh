@@ -59,9 +59,12 @@ Commands:
               package in packages/order not yet installed, then sys/ on top.
               The stamps keep the package walk cheap, so with the packages
               built this is the quick component build it always was
-  virt        Copy obj/ and the bootloader into virtual_machine/disk.raw.
+  virt        Copy the staged tree and the bootloader into a raw disk image.
               Builds nothing, so run a plain ./build.sh first if any
-              source changed
+              source changed. IMAGE selects the image (default disk.raw);
+              add "lfs" to write lfs/ instead of obj/
+
+                sudo IMAGE=disk-lfs.raw ./build.sh virt lfs
   usb <dev>   Write obj/ to a USB disk as a bootable rescue system. Erases
               the device, which must be named in full: there is no default.
               Partitions it GPT, makes the filesystems, then writes a
@@ -162,11 +165,11 @@ esac
 # Scanned across every argument rather than tested against $1, so it composes
 # with the commands that take one: "./build.sh lfs" builds into lfs/, and
 # "./build.sh virt lfs" images from it. Same shape as verbose and quiet below.
-target=obj
+build_target=obj
 
 for argument in "$@"; do
   if [ "${argument}" == "lfs" ]; then
-    target=lfs
+    build_target=lfs
     build_directory=${lfs_directory}
   fi
 done
@@ -1187,8 +1190,15 @@ if [ "$1" == "virt" ]; then
 
   pushd virtual_machine
 
-  if [ ! -e disk.raw ]; then
-    echo "disk.raw does not exist; create it with ./configure.sh" >&2
+  # IMAGE, matching start.sh and virtual_machine/configure.sh. The tree built
+  # in the chroot carries a compiler and does not fit the 1G default that was
+  # sized for a system without one, so there is more than one image now and
+  # the writer has to be told which.
+  image=${IMAGE:-disk.raw}
+
+  if [ ! -e "${image}" ]; then
+    echo "${image} does not exist; create it with ./configure.sh" >&2
+    echo "  IMAGE=${image} SIZE_MB=4096 ./configure.sh" >&2
     exit 1
   fi
 
@@ -1198,9 +1208,9 @@ if [ "$1" == "virt" ]; then
   # or resource busy" whenever anything else holds it. This also drops the two
   # unconditional umounts that used to run first and always complained about
   # having no mount point.
-  loop=$(losetup -f --show -P disk.raw)
+  loop=$(losetup -f --show -P "${image}")
   if [ -z "${loop}" ]; then
-    echo "cannot attach disk.raw to a loop device" >&2
+    echo "cannot attach ${image} to a loop device" >&2
     exit 1
   fi
 
@@ -1233,6 +1243,16 @@ if [ "$1" == "virt" ]; then
   cp ${build_directory}/vmlinuz disk/boot/vmlinuz
 
   ##### Root filesystem
+  # The chroot's mount points do not belong in an image. build.sh chroot
+  # creates /sources, /toolchain, /packages and /sources-build in lfs/ to
+  # mount things onto; unmounted they are empty directories, and copied into
+  # a running system they are four confusing names in /. rmdir rather than
+  # rm -rf, so anything that is unexpectedly not empty is left alone and
+  # noticed rather than deleted.
+  if [ "${build_target}" == "lfs" ]; then
+    rmdir "${build_directory}"/{sources,toolchain,packages,sources-build} 2>/dev/null || true
+  fi
+
   rm -rf disk/root/*
 
   # -a, not -r: the root filesystem depends on bin/lib/lib64 staying symlinks
@@ -1246,7 +1266,7 @@ if [ "$1" == "virt" ]; then
 
   popd
 
-  echo "disk.raw updated"
+  echo "${image} updated"
 
   exit
 fi
@@ -1584,7 +1604,7 @@ if have_source "Building kernel" ${src_directory}/linux; then
   #
   # obj/ has no such arrangement -- nothing else manages its headers -- so
   # there it is still the right thing to do.
-  if [ "${target}" == "obj" ]; then
+  if [ "${build_target}" == "obj" ]; then
     run kernel-headers make headers_install INSTALL_HDR_PATH=${build_directory}/usr \
       || failed=$((failed + 1))
   else
@@ -1707,7 +1727,7 @@ fi
 # Skipped for lfs/, where they are the chroot's: build_packages compiles
 # natively against this workstation, which is the arrangement the chroot
 # replaced. "./build.sh chroot packages" is the equivalent there.
-if [ "${target}" == "obj" ]; then
+if [ "${build_target}" == "obj" ]; then
   build_packages "" brief
 else
   echo "Packages: skipped, lfs/ gets them from ./build.sh chroot packages"
