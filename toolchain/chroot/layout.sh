@@ -70,8 +70,22 @@ nobody:x:65534:65534:Unprivileged User:/dev/null:/usr/bin/false
 EOF
 
 # GID 5 is tty, which is what build.sh's devpts mount names in gid=5, and
-# GID 97 is wheel, which sys/etc/group also uses. The rest are the
-# conventional numbers udev's rules in chapter 9 expect.
+# GID 97 is wheel. The rest are the conventional numbers udev's rules expect,
+# and udev names eleven of them by hand -- audio, cdrom, dialout, disk, input,
+# kmem, kvm, lp, tape, tty, video -- so a device node gets the right group
+# rather than root.
+#
+# netdev:98 is the one addition to the book's list, and it is here because
+# iwd installs /usr/share/dbus-1/system.d/iwd-dbus.conf, which opens with
+# <policy group="netdev">. Without the group, dbus starts anyway and says so
+# in /var/log/dbus.log:
+#
+#   Unknown group "netdev" in message bus configuration file
+#
+# and the policy it describes is silently not applied. It used to come from
+# sys/etc/group, which was deleted because staging it over this file threw
+# away all eleven of udev's -- so the number moved here rather than being
+# lost with the file it arrived in.
 cat > /etc/group << "EOF"
 root:x:0:
 bin:x:1:daemon
@@ -97,6 +111,7 @@ uuidd:x:80:
 wheel:x:97:
 users:x:999:
 nogroup:x:65534:
+netdev:x:98:
 EOF
 
 # A regular user for the chapter 8 test suites, which refuse to run several
