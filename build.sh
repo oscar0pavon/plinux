@@ -1144,6 +1144,15 @@ if [ "$1" == "chroot" ]; then
     packages)
       build_chroot_packages "${3:-}"
       ;;
+    strip)
+      # LFS 8.84. Like cleanup, not a step in the chapter 7 order: stripping
+      # the compiler before chapter 8 has used it would be an odd way to
+      # start. Reached by name, after everything is built.
+      chroot_mount
+      trap 'chroot_umount' EXIT
+      echo "Stripping ${lfs_directory}"
+      run "chroot-strip" chroot_run /bin/bash /toolchain/strip.sh || exit 1
+      ;;
     cleanup)
       # LFS 7.13.1 and 8.85. Not a step in toolchain/chroot/order, because
       # that file is chapter 7 and this has to run after chapter 8 -- put it
