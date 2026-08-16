@@ -1184,7 +1184,10 @@ PARTITIONS
     exit 1
   fi
 
-  echo "Copying the system"
+  # The size up front, so the minutes that follow are a known quantity rather
+  # than an open-ended wait. du's default counts blocks, which is what the
+  # stick actually receives, and not --apparent-size.
+  echo "Copying the system ($(du -sh ${build_directory} 2>/dev/null | cut -f1))"
 
   mkdir -p "${usb_mount}/boot/EFI/BOOT"
   cp ${build_directory}/pboot   "${usb_mount}/boot/EFI/BOOT/BOOTX64.EFI"
@@ -1204,8 +1207,32 @@ p "root=PARTUUID=${usb_root_partuuid} rw init=/pinit rootwait console=tty0 conso
 CONFIGURATION
 
   # -a for the same reason as the virt step: bin, lib and lib64 have to stay
-  # symlinks and the permissions have to survive
-  cp -a ${build_directory}/* "${usb_mount}/root"
+  # symlinks and the permissions have to survive.
+  #
+  # rsync when there is one, purely for --info=progress2: this is the one copy
+  # long enough that a silent terminal is indistinguishable from a stalled
+  # write, and a stick that is simply slow looks exactly like a stick that has
+  # died. rsync -a preserves the same set of things cp -a does, and running as
+  # root is what makes the owner and device preservation in it mean anything.
+  #
+  # --no-inc-recursive is what makes the percentage honest. rsync's default is
+  # to discover the tree as it copies, so the total it reports a fraction of
+  # keeps growing and the number walks backwards; scanning first costs a few
+  # seconds on 1.5G and buys a figure that only ever goes up.
+  #
+  # The same ${build_directory}/* glob cp used, deliberately, and not a
+  # trailing slash: a slash would sweep in the dotfiles at the top of the
+  # tree, and those are the build host's bookkeeping rather than part of the
+  # system being written.
+  #
+  # cp is kept for the case where there is no rsync, and for when stdout is
+  # not a terminal -- progress2 redraws itself with carriage returns, which is
+  # noise once it has been captured into a file.
+  if [ -t 1 ] && command -v rsync > /dev/null 2>&1; then
+    rsync -a --info=progress2 --no-inc-recursive ${build_directory}/* "${usb_mount}/root"
+  else
+    cp -a ${build_directory}/* "${usb_mount}/root"
+  fi
 
   # This stick's own fstab. The image ships one describing the VM disk, and
   # /dev/nvme0n1p1 does not exist here.
@@ -1217,7 +1244,33 @@ CONFIGURATION
 UUID=${usb_esp_uuid}  /boot  vfat  defaults,noauto  0 0
 FSTAB
 
-  sync
+  # The other half of the wait, and the more surprising half. The copy above
+  # returns once the last byte has reached the page cache, which on a USB
+  # stick can be a gigabyte ahead of what the device has taken: the progress
+  # bar finishes, and then nothing happens for a minute.
+  #
+  # So sync runs in the background and the dirty page counters are polled
+  # while it does. Dirty is what has not been handed to the device yet and
+  # Writeback is what is in flight; their sum is what is left to write. It is
+  # a machine-wide figure and nothing here can attribute it to this stick, but
+  # during a USB write it is this stick, and a number that falls is the point.
+  if [ -t 1 ]; then
+    echo "Flushing to the device"
+
+    sync &
+    usb_sync=$!
+
+    while kill -0 ${usb_sync} 2>/dev/null; do
+      printf '\r  %s MiB left to write ' \
+        "$(awk '/^Dirty:|^Writeback:/ { total += $2 } END { printf "%d", total / 1024 }' /proc/meminfo)"
+      sleep 1
+    done
+
+    wait ${usb_sync}
+    printf '\r\033[K'
+  else
+    sync
+  fi
 
   umount "${usb_mount}/boot"
   umount "${usb_mount}/root"
