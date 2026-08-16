@@ -353,6 +353,27 @@ empty and `make install` installs into `/`, which is `lfs/`. A package
 that completes leaves a stamp in `lfs/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
+A package that fails is built again. Three attempts in all, the last of them
+at `-j1`, and the stamp is written only if one of them succeeds. This is not
+for packages that are broken — those fail three times and take three times as
+long to say so. It is for the two failures that have nothing to do with the
+source: a `-j32` make that races, which the serial attempt settles, and this
+14900K faulting under sustained all-core load, which arrives as an internal
+compiler error or a signal 11 in a file that compiled yesterday and gets
+through on a second run. Either one used to end a forty-minute build at
+package sixty.
+
+Retrying is safe because re-running a package script after a failure is
+already the normal case here: `unpack` keeps the tree it finds, `apply_patch`
+notices a patch that is already in, `meson_setup` removes its build
+directory, and make resumes at the file that failed rather than at the start.
+Each attempt that is retried keeps its log as
+`logs/chroot-package-<name>.attempt-<n>.log`, so a package that only builds
+at `-j1` says so instead of silently succeeding; the last attempt keeps the
+usual `logs/chroot-package-<name>.log`. `PLINUX_ATTEMPTS` sets the count, and
+`PLINUX_ATTEMPTS=1` turns retrying off, which is what to use when the package
+genuinely does not build and the retries are only slowing the diagnosis down.
+
 Staging adds and overwrites but never deletes, so a package that changes what
 it installs leaves the old files behind. Rebuilding mesa against libglvnd left
 its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `lfs/usr/lib` with
