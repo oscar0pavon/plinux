@@ -10,13 +10,17 @@ cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
 working_directory=$(pwd)
 src_directory=${working_directory}/src
-build_directory=${working_directory}/obj
 sources_directory=${working_directory}/sources
 
-# $LFS for the chapter 5 cross toolchain, and eventually for the chroot that
-# replaces this build model. Deliberately not obj/: the two trees are built by
-# different toolchains and obj/ stays bootable while lfs/ is being grown.
+# $LFS, in the LFS book's terms, and the only tree this builds into.
+#
+# It was obj/ once: packages compiled by the host toolchain and staged, with
+# --sysroot and -L and -rpath-link arranging an isolation a chroot gives for
+# free. That model is gone. Everything is built inside lfs/ now, where the
+# build machine cannot be reached at all, and build_directory is kept as a
+# name because ninety-three package scripts use it.
 lfs_directory=${LFS:-${working_directory}/lfs}
+build_directory=${lfs_directory}
 
 # Where the redistributable firmware blobs are taken from, and which ones.
 # The build host is the machine the image is for, so what it loads is what
@@ -51,81 +55,74 @@ usage(){
   cat <<'USAGE'
 Usage: ./build.sh [command]
 
-Builds plinux into obj/, which is the staged root filesystem.
+Builds plinux into lfs/, which is the staged root filesystem.
+
+Everything except the bootloader, the kernel and the p* components is built
+inside a chroot on lfs/, following the LFS book. The build machine is used to
+make the chapter 5 cross compiler and nothing after it.
 
 Commands:
-  (none)      Build everything into obj/: this project's own components --
-              pboot, the kernel, pinit, pdaemon, pgetty, plogin -- then any
-              package in packages/order not yet installed, then sys/ on top.
-              The stamps keep the package walk cheap, so with the packages
-              built this is the quick component build it always was
-  virt        Copy the staged tree and the bootloader into a raw disk image.
-              Builds nothing, so run a plain ./build.sh first if any
-              source changed. IMAGE selects the image (default disk.raw);
-              add "lfs" to write lfs/ instead of obj/
-
-                sudo IMAGE=disk-lfs.raw ./build.sh virt lfs
-  usb <dev>   Write obj/ to a USB disk as a bootable rescue system. Erases
-              the device, which must be named in full: there is no default.
-              Partitions it GPT, makes the filesystems, then writes a
-              pboot.conf and an /etc/fstab carrying that disk's own
-              identifiers, so the stick boots itself and not the machine it
-              is plugged into. USB_YES=1 skips the typed confirmation
-  packages    Build the LFS packages listed in packages/order into obj/.
-              Already-installed ones are skipped. On a terminal the package
-              being built is shown on a line pinned to the top of the screen
-
-                packages <name>   rebuild just that one, skipped or not
-                packages force    rebuild every one of them
-
-              "Installed" means a stamp in obj/.packages, so "clean all"
-              makes the next run build everything again. Cleaning the
-              source trees does not: they unpack again when needed
-  quiet       Not a command: add it to any of the above, or set VERBOSE=0,
-              to only log build output instead of streaming it. Output is
-              streamed by default; "verbose" is accepted and is the default
-  check       Report installed binaries whose shared libraries are missing
-              from obj/. Those programs build and install cleanly but fail
-              at startup, so nothing else notices. Exits non-zero if any
-  clean       Clean the cloned source trees and bash's configure output,
-              and delete the unpacked package trees, which unpack again
-              from sources/ on the next build
-  clean all   As above, and delete obj/ entirely. It does not touch lfs/:
-              the cross toolchain is hours of work and is not something to
-              lose to a command aimed at the package tree
-  toolchain   Build the LFS chapter 5 cross toolchain into lfs/, following
-              toolchain/order. Each step is stamped in lfs/.toolchain and
-              runs under "env -i", so nothing this workstation exports
-              reaches it. Not part of a plain build: it is built once and
-              then used
+  (none)      Build this project's own components into lfs/ -- pboot, the
+              kernel, pinit, pdaemon, pgetty, plogin, the firmware -- then
+              stage sys/ on top. Packages are not built here; they are the
+              chroot's, see "chroot packages"
+  toolchain   LFS chapters 5 and 6: the cross toolchain, and the temporary
+              tools it cross-compiles into lfs/. Steps are listed in
+              toolchain/order and stamped in lfs/.toolchain
 
                 toolchain <name>  rebuild just that step
                 toolchain force   rebuild all of them
 
   chroot      Mount the virtual kernel filesystems into lfs/ and chroot into
-              it, per LFS 7.3 and 7.4. Needs root. sources/ and
-              toolchain/chroot/ are bind mounted read-only inside so the
-              tarballs and step scripts are reachable. The mounts come back
-              down on every exit path, and "clean" refuses to run while any
-              of them is up
+              it, per LFS 7.3 and 7.4. Needs root. sources/, packages/ and
+              toolchain/chroot/ are bind mounted read-only inside. The mounts
+              come down on every exit path, and "clean" refuses to run while
+              any of them is up
 
-                chroot            interactive shell in lfs/
-                chroot build      run toolchain/chroot/order inside it
-                chroot <name>     run just that step
-                chroot umount     take the mounts down by hand
+                chroot              interactive shell in lfs/
+                chroot build        LFS chapter 7, toolchain/chroot/order
+                chroot packages     LFS chapter 8: packages/order, inside
+                chroot packages <name>
+                chroot packages force
+                chroot cleanup      LFS 7.13 and 8.85: /tools, .la files
+                chroot strip        LFS 8.84
+                chroot umount       take the mounts down by hand
 
+  check       Report installed binaries whose shared libraries are missing
+              from lfs/. Exits non-zero if any
+  virt        Copy lfs/ and the bootloader into a raw disk image. Builds
+              nothing, so run ./build.sh first if any source changed. IMAGE
+              selects the image, default disk.raw. Needs root
+  usb <dev>   Write lfs/ to a USB disk as a bootable rescue system. Erases
+              the device, which must be named in full. USB_YES=1 skips the
+              typed confirmation
+  quiet       Not a command: add it to any of the above, or set VERBOSE=0,
+              to only log build output instead of streaming it
+  clean       Clean the cloned source trees and delete the unpacked package
+              trees, which unpack again from sources/ on the next build
+  clean all   As above, and delete lfs/ -- the whole LFS build. It asks
+              first; CLEAN_YES=1 skips the question
   help        This message
 
 Notes:
   Can be run from any directory; paths resolve relative to the script.
-  virt needs root: it uses losetup and mount.
+  virt and chroot need root: they use losetup, mount and chroot.
   Components are built with MAKEFLAGS=-j32.
 
-Examples:
-  ./build.sh              # full build into obj/
-  ./build.sh virt         # push obj/ into the VM image
-  ./build.sh clean all    # start over
-  ./build.sh toolchain    # build the chapter 5 cross toolchain into lfs/
+The whole build, from a fresh clone:
+
+  ./configure
+  ./download.sh all
+  ./download.sh --list wget-list-toolchain
+  ./build.sh toolchain
+  ./build.sh chroot build
+  ./build.sh chroot packages
+  ./build.sh chroot cleanup
+  ./build.sh chroot strip
+  ./build.sh
+  sudo ./build.sh virt
+  ./run
+
 USAGE
 }
 
@@ -137,7 +134,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|lfs|virt|usb|clean|toolchain|chroot|packages|check|verbose|quiet) ;;
+  ""|virt|usb|clean|toolchain|chroot|packages|check|verbose|quiet) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -162,18 +159,6 @@ esac
 #
 # The packages are a different matter and are not built by this path: for
 # lfs/ they come from "./build.sh chroot packages".
-# Scanned across every argument rather than tested against $1, so it composes
-# with the commands that take one: "./build.sh lfs" builds into lfs/, and
-# "./build.sh virt lfs" images from it. Same shape as verbose and quiet below.
-build_target=obj
-
-for argument in "$@"; do
-  if [ "${argument}" == "lfs" ]; then
-    build_target=lfs
-    build_directory=${lfs_directory}
-  fi
-done
-
 # Build output is streamed by default. It still goes to logs/ either way, but
 # watching a compile happen is worth more than a clean screen, and a build that
 # has silently stalled is otherwise indistinguishable from one that is working.
@@ -342,95 +327,13 @@ status_set(){
   printf '\e7\e[1;1H\e[2K\e[7m %s \e[0m\e8' "$1"
 }
 
-mkdir -p obj/usr/bin obj/usr/lib obj/usr/sbin
-
-# The /bin -> /usr/bin merge, as four symlinks.
+# The kernel's userspace API headers are not staged here.
 #
-# The target is "usr/bin", not "../../../usr/bin". Both resolve to /usr/bin
-# once the tree is the root filesystem -- ".." at "/" is "/" -- but only the
-# relative form also resolves correctly when the tree is read from here, as
-# obj/usr/bin. The ../../.. form escapes obj entirely and lands on the build
-# machine's own /usr, which is why "ls obj/bin" once reported tar and ps as
-# installed when neither was: it was listing the host's /usr/bin.
-#
-# That escape is not only a reporting problem. Anything that searches the
-# staged tree by path -- a --sysroot link, INSTALL_MOD_PATH, a check against
-# the image's libraries -- silently reaches the host through it, and succeeds,
-# because this machine runs plinux and its libraries are the right ones. It
-# would only fail in the VM or off the rescue USB.
-#
-# Repaired unconditionally: trees built before this still hold the old form.
-for link in bin:usr/bin sbin:usr/sbin lib:usr/lib lib64:usr/lib;do
-  link_name=obj/${link%%:*}
-  link_target=${link#*:}
-
-  # obj/sbin used to be a real directory, which left /sbin/ip and /sbin/udevd
-  # unreachable. Only replaced when empty, so nothing installed there is lost.
-  if [ -d "${link_name}" ] && [ ! -L "${link_name}" ];then
-    rmdir "${link_name}" 2>/dev/null || {
-      echo "${link_name} is a non-empty directory; expected a symlink to ${link_target}" >&2
-      exit 1
-    }
-  fi
-
-  if [ "$(readlink "${link_name}" 2>/dev/null)" != "${link_target}" ];then
-    ln -sfn "${link_target}" "${link_name}"
-  fi
-done
-
-# Mount points and standard directories. pinit mounts tmpfs on /run and
-# sysfs on /sys, and a mount whose target does not exist just fails, which is
-# how udev ended up unable to create /run/udev. Done unconditionally so trees
-# made before these were listed get them too.
-mkdir -p obj/{dev,proc,sys,run,var,var/log,boot,mnt,etc,root}
-
-# /var/run is where programs written before /run existed still look. iwd is
-# one: the ell it bundles compiles in unix:path=/var/run/dbus/system_bus_socket
-# while dbus listens on /run/dbus/system_bus_socket, so without this iwd
-# reports "Failed to initialize D-Bus" and exits. Relative, like /bin and
-# /lib, so it resolves in the image rather than in obj.
-if [ ! -e obj/var/run ]; then
-  ln -sf ../run obj/var/run
-fi
-mkdir -p obj/tmp && chmod 1777 obj/tmp
-
-# The kernel's userspace API headers -- linux/, asm/, asm-generic/, drm/ and
-# the rest of uapi. Every package that speaks to the kernel by structure
-# rather than through libc needs them, and the GUI stack is nothing but: DRM
-# ioctls, evdev, memfd_create.
-#
-# These were never staged. Everything built so far found them in the build
-# machine's /usr/include instead, and nothing complained, because that is a
-# copy of the same headers. Under --sysroot it is the first thing to fail,
-# and correctly so: obj was never a complete place to compile against.
-#
-# INSTALL_HDR_PATH ends in /usr because the kernel appends "include" to it.
-stage_kernel_headers(){
-  [ -d "${src_directory}/linux" ] || return 0
-
-  local status=0
-
-  pushd "${src_directory}/linux"
-  make headers_install INSTALL_HDR_PATH="${build_directory}/usr" > /dev/null || status=$?
-  popd
-
-  return ${status}
-}
-
-# Cheap, but not free, so only when they are absent -- the kernel step below
-# refreshes them whenever the kernel itself is rebuilt. input.h is the check
-# because it is the one libinput and libevdev fail on.
-if [ ! -f obj/usr/include/linux/input.h ];then
-  echo "Installing kernel headers into obj/usr/include"
-  stage_kernel_headers || echo "kernel headers not installed" >&2
-fi
-
-if [ -d obj ];then
-
-  musl_directory=${build_directory}
-
-  target=$(uname -m)-plinux-gnu
-fi
+# They used to be, out of src/linux into obj/usr/include, because nothing else
+# put them there. lfs/usr/include is chapter 5's and is deliberately
+# linux-6.16.1 rather than the running kernel: gcc's libsanitizer includes
+# <linux/scc.h>, which 6.16 has and 7.2 dropped, so staging the newer set over
+# it breaks the compiler. toolchain/linux-headers.sh owns that directory.
 
 # Every shared library an installed binary names has to be in the image too.
 # Getting this wrong is silent: the package builds against the host's copy,
@@ -515,261 +418,6 @@ if [ "$1" == "check" ]; then
   echo "every dependency resolves inside the image"
   exit
 fi
-
-# The packages walk, shared by "./build.sh packages" and the plain build,
-# which runs it after the components so that one command produces the whole
-# image.
-#
-# The first argument selects what to rebuild: empty for whatever is not
-# stamped, "force" for everything, a package name for just that one.
-# "brief" as the second collapses the per-package "have" lines into one
-# count; the plain build passes it, because 68 lines of "have" would bury
-# the component output around them.
-build_packages(){
-  local package_selector=${1:-}
-  local package_brief=${2:-}
-
-  echo "Building packages"
-
-  # A package that installed successfully leaves a stamp, so a rerun picks up
-  # where it stopped instead of rebuilding everything. "packages force"
-  # ignores them.
-  #
-  # The stamps live inside obj because that is what they are a statement
-  # about: this package is installed in *this* tree. Keeping them under logs/
-  # meant "clean all" removed obj and left the stamps behind, so every package
-  # reported "have" while the tree stayed empty. The leading dot keeps them
-  # out of the "cp -a obj/*" that populates the image.
-  local stamp_directory=${build_directory}/.packages
-  mkdir -p "${stamp_directory}"
-
-  # verbose and quiet are not selectors, they are the output setting handled
-  # above, passed through when the command line reads "packages quiet"
-  local package_force=
-  local package_only=
-
-  case "${package_selector}" in
-    ''|verbose|quiet) ;;
-    force)            package_force=1 ;;
-    *)                package_only=${package_selector} ;;
-  esac
-
-  local package_total
-  package_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
-                    "${working_directory}/packages/order")
-
-  local package_number=0
-  local package_matched=
-  local package_have=0
-  local package_failed=0
-  local packages_started=${SECONDS}
-  local script
-
-  # In the plain build the components have already put the status line up;
-  # only start (and later stop) one here when running standalone, so the
-  # line survives into the steps that follow the walk.
-  local status_was_active=${status_active}
-
-  [ -z "${status_was_active}" ] && status_start
-  status_set "starting"
-
-  while read -r package; do
-    case "${package}" in ''|\#*) continue ;; esac
-
-    package_number=$((package_number + 1))
-
-    # naming one package builds only it, whatever its stamp says
-    if [ -n "${package_only}" ]; then
-      if [ "${package}" != "${package_only}" ]; then
-        continue
-      fi
-      package_matched=1
-    fi
-
-    script=${working_directory}/packages/${package}.sh
-
-    if [ ! -x "${script}" ]; then
-      echo "  ${package}: no ${script}" >&2
-      package_failed=$((package_failed + 1))
-      continue
-    fi
-
-    if [ -f "${stamp_directory}/${package}" ] &&
-       [ -z "${package_force}" ] && [ -z "${package_only}" ]; then
-      if [ -n "${package_brief}" ]; then
-        package_have=$((package_have + 1))
-      else
-        echo "  have ${package}"
-      fi
-      continue
-    fi
-
-    # The tarballs are downloaded, not tracked, so a fresh clone has none --
-    # and a plain ./build.sh walks the packages now, so that clone reaches
-    # this loop rather than stopping at a step it was never told to run.
-    # Checked once, and only when there is something to build: a tree whose
-    # packages are all stamped needs no sources at all, which is the state
-    # "./build.sh clean" leaves behind.
-    if [ -z "${sources_checked}" ]; then
-      sources_checked=1
-
-      if ! ls "${sources_directory}"/*.tar.* > /dev/null 2>&1; then
-        status_stop
-        echo "no source tarballs in ${sources_directory}" >&2
-        echo "run ./download.sh all first; ./configure too, if src/linux is missing" >&2
-        exit 1
-      fi
-    fi
-
-    echo "  ${package}"
-    status_set "${package}   [${package_number}/${package_total}]"
-
-    if run "package-${package}" "${script}"; then
-      touch "${stamp_directory}/${package}"
-    else
-      package_failed=$((package_failed + 1))
-      status_set "${package}   [${package_number}/${package_total}]   FAILED"
-      # later packages link against earlier ones, so carrying on would only
-      # produce a second, more confusing failure
-      break
-    fi
-  done < "${working_directory}/packages/order"
-
-  [ -z "${status_was_active}" ] && status_stop
-
-  if [ "${package_have}" -ne 0 ]; then
-    echo "  ${package_have} already installed"
-  fi
-
-  echo
-
-  # a name that is in no order file is a typo, not a request to build nothing
-  if [ -n "${package_only}" ] && [ -z "${package_matched}" ]; then
-    echo "no such package: ${package_only}" >&2
-    echo "packages are listed in ${working_directory}/packages/order" >&2
-    exit 1
-  fi
-
-  if [ "${package_failed}" -ne 0 ]; then
-    echo "${package_failed} package(s) failed; logs are in ${log_directory}" >&2
-    exit 1
-  fi
-
-  echo "packages installed into ${build_directory} in $(format_duration $((SECONDS - packages_started)))"
-}
-
-# The LFS chapter 5 cross toolchain, built into lfs/ rather than obj/.
-#
-# Alongside, not in place: obj/ holds a system that boots and it keeps booting
-# until this one can replace it. The two trees never touch.
-#
-# Every step runs under "env -i". That is not tidiness -- it is the same
-# discipline as the sysroot in packages/common.sh, applied to the environment
-# instead of the search path. This workstation's PATH carries rust, go, the
-# jdk, rocm, texlive and /musl/bin, and its shell exports MAKEFLAGS, CFLAGS
-# and a locale. Any of those reaching a configure script in chapter 5 is a
-# decision made by this machine about the compiler that is supposed to be
-# independent of it. toolchain/common.sh rebuilds the environment the book
-# specifies from nothing.
-build_toolchain(){
-  local toolchain_selector=${1:-}
-
-  echo "Building the cross toolchain into ${lfs_directory}"
-
-  local stamp_directory=${lfs_directory}/.toolchain
-  mkdir -p "${stamp_directory}"
-
-  local toolchain_force=
-  local toolchain_only=
-
-  case "${toolchain_selector}" in
-    ''|verbose|quiet) ;;
-    force)            toolchain_force=1 ;;
-    *)                toolchain_only=${toolchain_selector} ;;
-  esac
-
-  local toolchain_total
-  toolchain_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
-                      "${working_directory}/toolchain/order")
-
-  local toolchain_number=0
-  local toolchain_matched=
-  local toolchain_have=0
-  local toolchain_started=${SECONDS}
-  local script
-
-  local status_was_active=${status_active}
-  [ -z "${status_was_active}" ] && status_start
-  status_set "starting"
-
-  while read -r step; do
-    case "${step}" in ''|\#*) continue ;; esac
-
-    toolchain_number=$((toolchain_number + 1))
-
-    if [ -n "${toolchain_only}" ]; then
-      if [ "${step}" != "${toolchain_only}" ]; then
-        continue
-      fi
-      toolchain_matched=1
-    fi
-
-    script=${working_directory}/toolchain/${step}.sh
-
-    if [ ! -x "${script}" ]; then
-      status_stop
-      echo "  ${step}: no ${script}" >&2
-      exit 1
-    fi
-
-    if [ -f "${stamp_directory}/${step}" ] &&
-       [ -z "${toolchain_force}" ] && [ -z "${toolchain_only}" ]; then
-      echo "  have ${step}"
-      toolchain_have=$((toolchain_have + 1))
-      continue
-    fi
-
-    echo "  ${step}"
-    status_set "${step}   [${toolchain_number}/${toolchain_total}]"
-
-    # HOME and TERM are the only two carried through. TERM because the book
-    # carries it and because make's output is unreadable without it; HOME
-    # because a configure script that cannot find one occasionally writes
-    # into /, and that is the host.
-    if run "toolchain-${step}" \
-         env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
-                LFS="${lfs_directory}" \
-                MAKEFLAGS="-j$(nproc)" \
-                /bin/bash "${script}"; then
-      touch "${stamp_directory}/${step}"
-    else
-      status_set "${step}   [${toolchain_number}/${toolchain_total}]   FAILED"
-      status_stop
-      echo >&2
-      echo "${step} failed; the log is ${log_directory}/toolchain-${step}.log" >&2
-      # Each step here is the ground the next one stands on -- a glibc that
-      # did not install cannot be compensated for by carrying on to
-      # libstdc++ -- so this stops rather than counting failures.
-      exit 1
-    fi
-  done < "${working_directory}/toolchain/order"
-
-  [ -z "${status_was_active}" ] && status_stop
-
-  if [ "${toolchain_have}" -ne 0 ]; then
-    echo "  ${toolchain_have} already built"
-  fi
-
-  echo
-
-  if [ -n "${toolchain_only}" ] && [ -z "${toolchain_matched}" ]; then
-    echo "no such toolchain step: ${toolchain_only}" >&2
-    echo "steps are listed in ${working_directory}/toolchain/order" >&2
-    exit 1
-  fi
-
-  echo "cross toolchain built in $(format_duration $((SECONDS - toolchain_started)))"
-}
 
 if [ "$1" == "toolchain" ]; then
   build_toolchain "${2:-}"
@@ -1181,8 +829,15 @@ if [ "$1" == "chroot" ]; then
 fi
 
 if [ "$1" == "packages" ]; then
-  build_packages "${2:-}"
-  exit
+  # Kept so the old command says where it went rather than failing as an
+  # unknown argument. Packages are built inside the chroot now: against a /
+  # that is lfs/, by the same scripts in packages/, with DESTDIR empty.
+  echo "packages are built inside the chroot now:" >&2
+  echo >&2
+  echo "  ./build.sh chroot packages          all of packages/order" >&2
+  echo "  ./build.sh chroot packages <name>   one of them" >&2
+  echo "  ./build.sh chroot packages force    all of them again" >&2
+  exit 1
 fi
 
 if [ "$1" == "virt" ]; then
@@ -1249,9 +904,7 @@ if [ "$1" == "virt" ]; then
   # a running system they are four confusing names in /. rmdir rather than
   # rm -rf, so anything that is unexpectedly not empty is left alone and
   # noticed rather than deleted.
-  if [ "${build_target}" == "lfs" ]; then
-    rmdir "${build_directory}"/{sources,toolchain,packages,sources-build} 2>/dev/null || true
-  fi
+  rmdir "${build_directory}"/{sources,toolchain,packages,sources-build} 2>/dev/null || true
 
   rm -rf disk/root/*
 
@@ -1460,9 +1113,9 @@ fi
 
 if [ "$1" == "clean" ]; then
   # Never delete anything while the chroot's mounts are up. /dev is bind
-  # mounted into lfs/ at that point, and "clean all" removes obj/ rather than
-  # lfs/ -- but the margin between those two is not where this should be
-  # relying on getting a path right.
+  # mounted into lfs/ at that point, and "clean all" removes lfs/ -- deleting
+  # a tree with the host's /dev bind mounted inside it is not a mistake worth
+  # leaving room for.
   if chroot_mounted_any; then
     echo "the chroot is still mounted; refusing to clean" >&2
     echo "run ./build.sh chroot umount first" >&2
@@ -1522,9 +1175,35 @@ if [ "$1" == "clean" ]; then
     echo "removed ${removed} package tree(s); they unpack again on the next build"
   fi
 
-  # "clean all" also discards the staged root filesystem
+  # "clean all" discards the staged root filesystem, and that is a much
+  # larger thing to discard than it used to be.
+  #
+  # It removed obj/ once: forty minutes of packages compiled by the host, and
+  # a plain ./build.sh put it back. build_directory is lfs/ now, which is
+  # chapters 5 through 8 -- the cross toolchain, the temporary system, the
+  # chroot and ninety-three packages built inside it. Rebuilding is closer to
+  # an afternoon, and none of it is recoverable from anywhere else.
+  #
+  # So it asks. CLEAN_YES=1 skips the question, the same way USB_YES=1 does
+  # for the command that erases a disk.
   if [ "$2" == "all" ]; then
     if [ -n "${build_directory}" ] && [ -d "${build_directory}" ]; then
+      echo
+      echo "This removes ${build_directory} ($(du -sh "${build_directory}" 2>/dev/null | cut -f1))."
+      echo "That is the whole LFS build: toolchain, chroot and packages."
+      echo "Rebuilding it is ./build.sh toolchain, chroot build, chroot packages."
+      echo
+
+      if [ "${CLEAN_YES:-}" != "1" ]; then
+        printf 'Type the tree name to confirm: '
+        read -r confirmation
+
+        if [ "${confirmation}" != "$(basename "${build_directory}")" ]; then
+          echo "not confirmed; nothing removed" >&2
+          exit 1
+        fi
+      fi
+
       echo "Removing ${build_directory}"
       rm -rf "${build_directory}"
     fi
@@ -1602,14 +1281,7 @@ if have_source "Building kernel" ${src_directory}/linux; then
   # includes <linux/scc.h>, which 6.16 has and 7.2 dropped. Staging the
   # running kernel's headers here would put that back.
   #
-  # obj/ has no such arrangement -- nothing else manages its headers -- so
-  # there it is still the right thing to do.
-  if [ "${build_target}" == "obj" ]; then
-    run kernel-headers make headers_install INSTALL_HDR_PATH=${build_directory}/usr \
-      || failed=$((failed + 1))
-  else
-    echo "  kernel-headers: skipped, ${build_directory}/usr/include is chapter 5's"
-  fi
+  echo "  kernel-headers: skipped, ${build_directory}/usr/include is chapter 5's"
 
   if run kernel-config make olddefconfig && run kernel make; then
     # x86_64 was merged into arch/x86 in 2.6.24; arch/x86_64 has not existed
@@ -1724,15 +1396,11 @@ fi
 # recently edited is almost always a component, and its build -- or its
 # failure -- should surface first, not behind a walk of the order file.
 #
-# Skipped for lfs/, where they are the chroot's: build_packages compiles
-# natively against this workstation, which is the arrangement the chroot
-# replaced. "./build.sh chroot packages" is the equivalent there.
-if [ "${build_target}" == "obj" ]; then
-  build_packages "" brief
-else
-  echo "Packages: skipped, lfs/ gets them from ./build.sh chroot packages"
-  echo
-fi
+# The packages are not built here. They are built inside the chroot, by
+# "./build.sh chroot packages", against a / that is lfs/ -- which is the whole
+# reason there is no longer a native walk to call.
+echo "Packages: ./build.sh chroot packages builds them, inside lfs/"
+echo
 
 echo "Installing system configuration"
 status_set "Installing system configuration"

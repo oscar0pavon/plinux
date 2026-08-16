@@ -6,7 +6,7 @@
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
 image=${IMAGE:-disk.raw}
-size_mb=${SIZE_MB:-1024}
+size_mb=${SIZE_MB:-4096}
 esp_mb=${ESP_MB:-100}
 
 loop=
@@ -24,7 +24,7 @@ Commands:
 
 Environment:
   IMAGE       image file    (default disk.raw)
-  SIZE_MB     total size    (default 1024)
+  SIZE_MB     total size    (default 4096)
   ESP_MB      EFI partition (default 100)
 
 The loop device is released before exiting. Populate the image with

@@ -46,12 +46,6 @@ console; sway has not yet been looked at on a display.
 
 ## Getting it
 
-There are two ways to build this, and they produce two different trees.
-
-**The chroot build**, into `lfs/`, is the one to use. It follows the LFS book:
-a cross toolchain, a temporary system, a chroot, and then everything else
-built inside it, where the build machine cannot be reached at all.
-
 ```sh
 git clone https://github.com/oscar0pavon/plinux
 cd plinux
@@ -61,40 +55,29 @@ cd plinux
 
 ./build.sh toolchain                     # LFS 5 and 6: cross compiler, temp tools
 ./build.sh chroot build                  # LFS 7: enter the chroot, build its tools
-./build.sh chroot packages               # LFS 8: the 93 packages, inside
+./build.sh chroot packages               # LFS 8: the 93 packages, inside it
 ./build.sh chroot cleanup                # LFS 7.13 and 8.85: /tools and the rest
 ./build.sh chroot strip                  # LFS 8.84
-./build.sh lfs                           # pboot, kernel, p* components, sys/
 
-cd virtual_machine
-IMAGE=disk-lfs.raw SIZE_MB=4096 ./configure.sh   # once
-cd ..
-sudo IMAGE=disk-lfs.raw ./build.sh virt lfs      # write the image
-IMAGE=disk-lfs.raw ./run                         # boot it
+./build.sh                               # pboot, kernel, p* components, sys/
+sudo ./build.sh virt                     # write virtual_machine/disk.raw
+./run                                    # boot it
 ```
 
-About 35 minutes on 32 threads and 14G of disk while it runs, most of which
-`chroot cleanup` gives back — the finished tree is 1.4G stripped. It needs a
-4G image rather than the 1G default, because the result carries its own
-compiler.
+That is the whole build. About 35 minutes on 32 threads, and 14G of disk while
+it runs — most of which `chroot cleanup` gives back, leaving a 1.4G tree. The
+image is 4G because the result carries its own compiler.
 
-**The native build**, into `obj/`, is the original: packages compiled by the
-host toolchain and staged, with no chroot anywhere.
-
-```sh
-./configure
-./download.sh all
-./build.sh packages      # into obj/, using this workstation's compiler
-./build.sh               # components, remaining packages, sys/
-./build.sh check         # find binaries whose libraries the image lacks
-sudo ./build.sh virt
-./run
-```
-
-It is faster and it is what `./build.sh check` exists for, because a package
-that finds a host library there builds cleanly and fails only in the VM. The
-chroot build removes that failure mode rather than detecting it. Both are
+It follows the LFS book: a cross toolchain built on the host, a temporary
+system cross-compiled with it, a chroot, and then everything else built inside
+that chroot where the build machine cannot be reached at all. The steps are
 explained under [Building from scratch](#building-from-scratch).
+
+plinux built into `obj/` once, with packages compiled by the host toolchain
+and staged, and `--sysroot`, `-L` and `-rpath-link` arranging by hand the
+isolation a chroot gives for free. That is gone. It half worked, and the way
+it failed was silent — a package that found a host library built cleanly and
+only failed in the VM.
 
 `./configure` clones two repositories that are developed outside this tree —
 the kernel from mainline and `pboot` from its own repository — because a
@@ -128,7 +111,7 @@ and the package scripts unpack them.
 ## Layout
 
 ```
-build.sh              build everything into obj/, or write obj/ to a disk
+build.sh              build into lfs/, or write lfs/ to a disk
 configure             clone the kernel and pboot, install sys/kernel_config
 download.sh           fetch source tarballs into sources/
 wget-list-core        the sources the console system is built from
@@ -136,8 +119,7 @@ wget-list-gui         the Wayland stack, fetched separately
 wget-list-toolchain   the chapter 5-7 toolchain, which the image never keeps
 wget-list-sysv        the LFS book's own list, kept for reference
 run                   symlink to virtual_machine/start.sh
-obj/                  staged root filesystem, native build; becomes / in the image
-lfs/                  the same, built in a chroot; $LFS in the LFS book's terms
+lfs/                  staged root filesystem; $LFS in the book's terms, and / in the image
 toolchain/            LFS chapters 5-7: the cross toolchain and the chroot steps
 packages/             one build script per package, plus the build order
 src/                  component sources and third-party trees
@@ -151,13 +133,17 @@ virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 
 ## Building from scratch
 
-Both sequences are under [Getting it](#getting-it). What each command is for,
-and why they run in that order.
+The sequence is under [Getting it](#getting-it). What each command is for, and
+why they run in that order. This is LFS 12.4 as the book writes it, with
+plinux's package set in place of the book's chapter 8.
 
-### The chroot build
+**`./configure`** clones `src/linux` and `src/pboot` and copies
+`sys/kernel_config` to `src/linux/.config`. It comes first because the kernel
+tree has to exist before anything is built from it.
 
-This is LFS 12.4 as the book writes it, with plinux's package set in place of
-the book's chapter 8.
+**`./download.sh all`** fetches `wget-list-core` and `wget-list-gui`;
+`./download.sh --list wget-list-toolchain` adds what chapters 5 to 7 need and
+the image never keeps. See [Downloading sources](#downloading-sources).
 
 **`./build.sh toolchain`** walks `toolchain/order`: chapters 5 and 6. Binutils
 and GCC pass 1, the kernel API headers, glibc, libstdc++, then seventeen tools
@@ -177,7 +163,7 @@ fails much later and for no visible reason.
 and `/etc/passwd`, then gettext, bison, perl, python, texinfo and util-linux.
 
 **`./build.sh chroot packages`** runs `packages/order` inside that chroot.
-The same scripts that build `obj/`, against `/` instead — `packages/common.sh`
+The same scripts, against a `/` that is `lfs/` — `packages/common.sh`
 sees `PLINUX_IN_CHROOT` and empties `build_directory`, so `DESTDIR` goes empty
 and the sysroot machinery switches off, because there is no second tree left
 for a search to escape into. Stamps go in `lfs/.packages`.
@@ -196,9 +182,10 @@ is defensible where packages would not be — the `p*` binaries link musl
 statically and the kernel and pboot link no libc at all, so nothing there
 loads a library at runtime.
 
-**`sudo IMAGE=disk-lfs.raw ./build.sh virt lfs`** writes `lfs/` rather than
-`obj/`. `IMAGE` selects the disk in both `build.sh virt` and `./run`; it
-defaults to `disk.raw` in both.
+**`sudo ./build.sh virt`** writes `lfs/` and the bootloader into
+`virtual_machine/disk.raw` over a loop device, which is what needs root.
+`IMAGE` selects a different one in both `build.sh virt` and `./run`, which is
+useful for keeping a known-good image while a new one is unproven.
 
 Useful on their own:
 
@@ -212,53 +199,6 @@ Useful on their own:
 The mounts come down on every exit path, including a failed build or a Ctrl-C
 out of the interactive shell, and `clean` refuses to run while any of them is
 up.
-
-### The native build
-
-**`./configure`** clones `src/linux` and `src/pboot` and copies
-`sys/kernel_config` to `src/linux/.config`. It has to come first — not because
-`download.sh` needs it, but because every `build.sh` invocation installs the
-kernel's userspace API headers out of `src/linux` into `obj/usr/include`, and
-no package will compile without them.
-
-**`./download.sh all`** fetches both lists: the thirty-five tarballs and
-patches of `wget-list-core`, and the 33 of `wget-list-gui`. Plain
-`./download.sh` takes only the core, which is enough for a console system but
-not for `packages/order` as it now stands — that ends with the Wayland tier.
-See [Downloading sources](#downloading-sources).
-
-**`./build.sh packages`** walks `packages/order` from the top, running one
-script per package, each installing with `DESTDIR=obj`. A package that
-completes leaves a stamp in `obj/.packages`, so an interrupted run resumes
-rather than starting over. This is the long step, about 40 minutes on 32
-threads.
-
-**`./build.sh`** builds this project's own components — pboot, the kernel,
-pinit, pgetty and plogin — then walks the package order itself, and stages
-`sys/` on top of everything, so the machine's configuration wins over any
-package default. Run alone it therefore produces the whole image; after the
-`packages` step above it is the quick component build, because the stamps
-reduce the walk to a count of what is already installed. The components come
-first because they are what changes day to day, and an error there should
-surface immediately. Every step prints how long it took, and the build its
-total.
-
-**`./build.sh check`** reads the `NEEDED` entries of every binary in `obj/`
-and reports any whose libraries are not in the image. Run it after both build
-steps; it has nothing useful to say until then. One binary is expected to fail
-it, see [Packages](#packages).
-
-**`sudo ./build.sh virt`** copies `obj/` and the bootloader into
-`virtual_machine/disk.raw` over a loop device, which is what needs root. It
-builds nothing, so run a plain `./build.sh` first if any source changed.
-
-**`./run`** starts QEMU against that image.
-
-Afterwards, the loop while working on it is usually just:
-
-```sh
-./build.sh && sudo ./build.sh virt && ./run
-```
 
 ### What the host needs
 
@@ -292,21 +232,18 @@ like a broken compiler but is only a missing interpreter.
 
 ```sh
 ./build.sh help            # all commands
-./build.sh                 # everything: components, then any unbuilt packages
-./build.sh packages        # the packages in packages/order, natively into obj/
-./build.sh check           # find binaries whose libraries are missing
-./build.sh virt            # copy the staged tree into a raw disk image
-./build.sh usb /dev/sdX    # write it to a USB disk as a bootable rescue system
-./build.sh clean all       # clean sources and delete obj/
-
-./build.sh toolchain       # LFS chapters 5 and 6, into lfs/
+./build.sh                 # pboot, kernel, p* components and sys/, into lfs/
+./build.sh toolchain       # LFS chapters 5 and 6
 ./build.sh chroot          # interactive shell in lfs/
-./build.sh chroot build    # LFS chapter 7, inside it
-./build.sh chroot packages # LFS chapter 8: packages/order, inside it
+./build.sh chroot build    # LFS chapter 7
+./build.sh chroot packages # LFS chapter 8: packages/order, inside the chroot
 ./build.sh chroot cleanup  # LFS 7.13 and 8.85
 ./build.sh chroot strip    # LFS 8.84
 ./build.sh chroot umount   # take the chroot mounts down
-./build.sh lfs             # components and sys/ into lfs/ instead of obj/
+./build.sh check           # find binaries whose libraries are missing
+./build.sh virt            # copy lfs/ into a raw disk image
+./build.sh usb /dev/sdX    # write it to a USB disk as a bootable rescue system
+./build.sh clean all       # clean sources and delete lfs/, after asking
 ```
 
 Build output is streamed as well as written to `logs/`. Add `quiet` to any
@@ -382,22 +319,33 @@ list, unlike `src/linux` and `src/pboot`, which `./configure` clones.
 
 The userland beyond the `p*` components is built from source, one script per
 package in `packages/`. `packages/order` lists them in dependency order and
-`./build.sh packages` walks it from the top.
+`./build.sh chroot packages` walks it from the top, inside the chroot.
 
 ```sh
-./build.sh packages          # build whatever is not installed yet
-./build.sh packages <name>   # rebuild just that one, installed or not
-./build.sh packages force    # rebuild them all
-./build.sh packages quiet    # log the output instead of streaming it
-./build.sh check             # find binaries whose libraries are missing
+./build.sh chroot packages          # build whatever is not installed yet
+./build.sh chroot packages <name>   # rebuild just that one, installed or not
+./build.sh chroot packages force    # rebuild them all
+./build.sh chroot packages quiet    # log the output instead of streaming it
+./build.sh check                    # find binaries whose libraries are missing
 ```
+
+The scripts are not chroot-specific. `packages/common.sh` sees
+`PLINUX_IN_CHROOT` and empties `build_directory`, so every path derived from
+it — `${build_directory}/usr/lib/pkgconfig`, the `-L` on `CC`, the `DESTDIR`
+each script installs with — collapses to the real one. `DESTDIR=` installs to
+`/`, which inside the chroot is `lfs/`.
 
 Run `check` after building. A package compiled against a host library that
 was never staged installs perfectly and then fails the moment the program is
 run, which is invisible until someone tries it: that is how `kmod` shipped
 unable to start, taking `modprobe` and `depmod` with it, and how `dmesg` and
 `lsblk` were broken for thirteen packages. `check` reads the `NEEDED` entries
-of every binary in `obj/` and reports the ones the image cannot satisfy.
+of every binary in `lfs/` and reports the ones the image cannot satisfy.
+
+It matters less than it did. That failure mode was a property of compiling
+against the build machine, and inside the chroot there is no build machine to
+compile against — `check` is now a check on the result rather than a defence
+against the method.
 
 `memusagestat` is expected to fail it. That is a glibc profiling helper
 wanting libgd, which is not worth a package here. It wanted libpng too until
@@ -406,12 +354,12 @@ cairo needed one.
 Each script sources `packages/common.sh`, which unpacks the tarball from
 `sources/` into `src/` if it is not already there and sets `CC` and the staging
 paths. Everything installs with `DESTDIR=obj`, never into the host. A package
-that completes leaves a stamp in `obj/.packages`, so the stamps disappear with
+that completes leaves a stamp in `lfs/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
 Staging adds and overwrites but never deletes, so a package that changes what
 it installs leaves the old files behind. Rebuilding mesa against libglvnd left
-its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `obj/usr/lib` with
+its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `lfs/usr/lib` with
 nothing pointing at them. Harmless, but they accumulate; `clean all` is the
 only thing that removes them.
 
@@ -537,11 +485,11 @@ says. `AC_CHECK_LIB` and `cc.find_library` therefore still see the build
 machine. `LDFLAGS` carries `-L obj/usr/lib` to put the image first in that
 order, which is as far as a native build reaches.
 
-None of this machinery does anything in the chroot build, and that is the
-point of it: `packages/common.sh` sees `PLINUX_IN_CHROOT`, empties
+None of this runs any more, and it is kept because it is the argument for
+what replaced it. `packages/common.sh` sees `PLINUX_IN_CHROOT`, empties
 `build_directory` and switches the sysroot off, because inside `lfs/` there is
-no second tree for a search to escape into. What follows describes the native
-build into `obj/`, where there is.
+no second tree for a search to escape into. What follows is what had to be
+arranged by hand when there was.
 
 **And `-L` does not cover indirect dependencies.** When a program links
 against `libgio`, ld follows `libgio`'s own `DT_NEEDED` to `libmount.so.1` to
@@ -567,17 +515,20 @@ did not. What the sysroot misses, `./build.sh check` is there to find.
 `PLINUX_SYSROOT=none` turns the sysroot off, for bisecting a package that will
 not build. There is no equivalent escape for pkg-config; edit `common.sh`.
 
-This depends on `obj/bin`, `obj/lib`, `obj/lib64` and `obj/sbin` being
-*relative* symlinks — `usr/lib`, not `../../../usr/lib`. Both spell `/usr/lib`
-once the tree is the root filesystem, but only the relative form also resolves
-correctly when the tree is read from the build machine. The `../../..` form
-escapes `obj/` entirely and lands on the host's own `/usr`, which is why `ls
-obj/bin` once reported `tar` and `ps` as installed when neither was.
+It depended on `bin`, `lib`, `lib64` and `sbin` being *relative* symlinks —
+`usr/lib`, not `../../../usr/lib`. Both spell `/usr/lib` once the tree is the
+root filesystem, but only the relative form also resolves correctly when the
+tree is read from the build machine; the `../../..` form escaped the staged
+tree entirely and landed on the host's own `/usr`, which is why `ls obj/bin`
+once reported `tar` and `ps` as installed when neither was. `lfs/` gets the
+same three symlinks from `toolchain/common.sh`, for the same reason, and
+`lib64` is a real directory there because that is what the book's chapter 5
+requires.
 
-The kernel's userspace API headers are part of the sysroot and are installed
-into `obj/usr/include` by `build.sh`, refreshed whenever the kernel is
-rebuilt. Before that they were never staged at all, and every package compiled
-against the host's copy.
+The kernel's userspace API headers were part of that sysroot too. In `lfs/`
+they are chapter 5's and come from `linux-6.16.1` rather than the running
+kernel — see `toolchain/linux-headers.sh`, which explains what installing the
+newer set over them breaks.
 
 ## Running
 
@@ -621,7 +572,7 @@ refreshed from the workstation: `CONFIG_DRM_VIRTIO_GPU` for the display, and
 sudo ./build.sh usb /dev/sdX
 ```
 
-Writes `obj/` to a USB disk as a self-contained bootable system. The device has
+Writes `lfs/` to a USB disk as a self-contained bootable system. The device has
 to be named in full; there is no default, and the command refuses anything that
 is not a whole disk, is the disk the host booted from, or has a filesystem
 mounted. It then asks for `ERASE` to be typed, which `USB_YES=1` skips.
@@ -665,7 +616,7 @@ kill -12 1    # SIGUSR2, poweroff
 
 `src/pinit/reboot` and `src/pinit/poweroff` are one-line wrappers around those.
 `make install` in `src/pinit` puts them in `/usr/sbin` on the workstation;
-`build.sh` does not yet stage them into `obj/`, so the image still needs the
+`build.sh` does not yet stage them into `lfs/`, so the image still needs the
 `kill` form.
 
 On shutdown pinit sends every remaining process `SIGTERM`, waits five seconds,
@@ -704,15 +655,17 @@ The VM image is GPT:
 | Partition | Size | Type | Contents |
 | --- | --- | --- | --- |
 | 1 | 100M | EFI System (FAT) | `EFI/BOOT/BOOTX64.EFI`, `vmlinuz`, `pboot.conf` |
-| 2 | 922M | ext4 | root filesystem, staged from `obj/` |
+| 2 | ~3.9G | ext4 | root filesystem, staged from `lfs/` |
 
 The guest reaches them as `/dev/nvme0n1p1` and `/dev/nvme0n1p2`, since `run`
 attaches the image through an NVMe controller. The build side is unaffected:
 `build.sh virt` writes the image over a loop device either way.
 
-`/bin`, `/lib`, `/lib64`, `/sbin` and `/var/run` are relative symlinks, and
-they resolve both inside `obj/` and once the tree is `/`. That is the point of
-them being relative; see the sysroot section above.
+`/bin`, `/lib`, `/sbin` and `/var/run` are relative symlinks, and they resolve
+both inside `lfs/` and once the tree is `/`. That is the point of them being
+relative; see the sysroot section above. `/lib64` is a real directory holding
+two symlinks to the loader, which is the book's arrangement and what the
+chapter 5 toolchain was built against.
 
 ## Installing pboot on real hardware
 
@@ -753,8 +706,8 @@ isolation a chroot gives for free had to be arranged with `--sysroot` and
 `-rpath-link` instead.
 
 It now does both, and `./build.sh toolchain` through `./build.sh chroot
-packages` is the book's chapters 5 to 8. The native build into `obj/` is still
-there and still works. The difference it makes is not theoretical: moving the
+packages` is the book's chapters 5 to 8. The native build is gone. The
+difference it makes is not theoretical: moving the
 build into the chroot turned up nine things the host had been supplying
 invisibly, among them a specific `automake-1.16` this workstation happened to
 have installed, `pkgconf`, `meson`, `gperf`, and three python modules mesa
