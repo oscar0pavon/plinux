@@ -64,6 +64,19 @@ https://ftpmirror.gnu.org/bash/bash-5.3.tar.gz
 # bc and flex are wanted by other packages' build systems; libtool, autoconf
 # and automake by anything that regenerates its build system after a patch,
 # which is what coreutils does.
+# The eight chapters 6 and 7 install as temporary tools and chapter 8
+# replaces. They are in wget-list-toolchain as well, which fetches them for
+# those chapters; listed here too because the image keeps these copies and a
+# clone that only runs ./download.sh has to be able to build them.
+https://ftpmirror.gnu.org/m4/m4-1.4.20.tar.xz
+https://ftpmirror.gnu.org/make/make-4.4.1.tar.gz
+https://ftpmirror.gnu.org/patch/patch-2.8.tar.xz
+https://astron.com/pub/file/file-5.46.tar.gz
+https://ftpmirror.gnu.org/bison/bison-3.8.2.tar.xz
+https://www.cpan.org/src/5.0/perl-5.42.0.tar.xz
+https://ftpmirror.gnu.org/gettext/gettext-0.26.tar.xz
+https://ftpmirror.gnu.org/texinfo/texinfo-7.2.tar.xz
+
 https://distfiles.ariadne.space/pkgconf/pkgconf-2.5.1.tar.xz
 https://github.com/gavinhoward/bc/releases/download/7.0.3/bc-7.0.3.tar.xz
 https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz

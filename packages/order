@@ -16,6 +16,26 @@ musl
 # which matters because pinit execs plogin and plogin execs this.
 bash
 
+# The tools chapters 6 and 7 installed and chapter 8 replaces.
+#
+# The image had all of these already: m4, make, patch and file cross-compiled
+# by the chapter 5 toolchain, bison, perl, gettext and texinfo built inside
+# the chroot as temporary tools. They work, which is why nothing noticed they
+# were still the temporary ones -- the book rebuilds every one of them in
+# chapter 8 and this did not.
+#
+# The difference is not cosmetic in every case. Chapter 7's perl was built
+# without threads, without man pages and with no idea where a pager is,
+# because a perl that only runs other packages' configure scripts needs none
+# of that. Chapter 7's gettext was three programs copied into /usr/bin with
+# no libraries at all.
+#
+# m4 first, and before autoconf below, which is m4 at run time.
+m4
+make
+patch
+file
+
 # autotools, before coreutils rather than anywhere more logical.
 #
 # coreutils applies a patch that touches tests/local.mk, which leaves
@@ -120,6 +140,17 @@ gcc
 # after gcc, because libtool records the compiler and linker it was
 # configured against
 libtool
+
+# bison after m4, which it calls at run time. The rest wait for perl, which
+# waits for zlib and bzip2 -- it is built BUILD_ZLIB=False so it links the
+# image's copies rather than the ones bundled in its own tree.
+#
+# gettext and texinfo are both perl at run time: autopoint is a perl script
+# and so is makeinfo.
+bison
+perl
+gettext
+texinfo
 
 # udev's dependencies, then udev. All of these are glibc programs: their
 # libraries are linked into udev, so they have to agree on the C library.
