@@ -24,7 +24,10 @@ src/pinit/pinit
 
 src/shadow/*
 
-virtual_machine/disk.raw
+# Disk images. The glob rather than disk.raw alone: ./configure.sh takes an
+# IMAGE name, and the chroot build needs its own -- disk-lfs.raw is 2.2G and
+# one "git add ." away from a history nobody can clone.
+virtual_machine/*.raw
 virtual_machine/disk
 src/plogin/plogin
 
