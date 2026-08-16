@@ -8,7 +8,10 @@ source "$(dirname "$(readlink -f "$0")")/common.sh"
 
 toolchain_layout
 
-directory=$(unpack_cross 'file-*.tar.gz' 'file-5.46')
+# Fresh, because cross_configure below configures in the tree and the native
+# configure above it then refuses the tree as already configured on the next
+# run. unpack_cross_fresh has the details.
+directory=$(unpack_cross_fresh 'file-*.tar.gz' 'file-5.46')
 cd "${directory}"
 
 # A native copy of file, built first and used by the cross build.

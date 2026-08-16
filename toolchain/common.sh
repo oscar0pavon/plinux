@@ -218,6 +218,39 @@ unpack_cross(){
   echo "${cross_src_directory}/${directory}"
 }
 
+# The same, but from the tarball every time.
+#
+# Two of chapter 6's packages -- ncurses and file -- build twice out of one
+# tree: a native helper in build/ that the cross build needs to exist (tic to
+# compile the terminfo database, file to compile the magic database), and then
+# the cross build in the tree itself, because that is how the book configures
+# both. The second one writes into the directory the first one configures
+# against, so the tree that a successful run leaves behind is not a tree the
+# next run can start from:
+#
+#   file:    configure: error: source directory already configured;
+#            run "make distclean" there first
+#
+#   ncurses: cc1: fatal error: ../ncurses/expanded.c: No such file or directory
+#
+#            -- because VPATH in build/ncurses is "../../ncurses", where the
+#            last cross build left its generated expanded.c. make finds that
+#            copy, concludes there is nothing to generate, and the recipe then
+#            compiles "../ncurses/expanded.c", which from build/ncurses is the
+#            file it just declined to write.
+#
+# Both are the same failure: a step that worked once and then could not be run
+# again, which is the property everything in this repository is supposed to
+# have. "make distclean" would fix file and would have to be trusted to fix
+# ncurses; unpacking again is what the book assumes anyway and costs one tar.
+unpack_cross_fresh(){
+  local directory=$2
+
+  rm -rf "${cross_src_directory:?}/${directory}"
+
+  unpack_cross "$@"
+}
+
 # The chapter 6 configure line.
 #
 # Almost every package in that chapter is configured identically:

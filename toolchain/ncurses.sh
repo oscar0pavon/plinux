@@ -14,27 +14,10 @@ source "$(dirname "$(readlink -f "$0")")/common.sh"
 
 toolchain_layout
 
-# Unpacked fresh every time, which no other step here does.
-#
-# This is the one chapter 6 package that builds twice out of one tree: a
-# native tic in build/, then the cross build in the tree itself, because the
-# book configures ncurses in place. The in-tree build leaves its generated
-# sources -- expanded.c, lib_gen.c, comp_captab.c and the rest of AUTO_SRC --
-# lying in ncurses/, and on the next run they break the native build that
-# comes first.
-#
-# The mechanism is VPATH. build/ncurses/Makefile has "VPATH = ../../ncurses",
-# so make looks for ./expanded.c, finds the copy the last cross build left in
-# the source tree, and concludes there is nothing to generate. The recipe
-# then compiles "../ncurses/expanded.c", which from build/ncurses means
-# build/ncurses/expanded.c -- the file it just decided not to write:
-#
-#   cc1: fatal error: ../ncurses/expanded.c: No such file or directory
-#
-# Deleting the tree is the whole fix, and it costs one tar of 3.5MB.
-rm -rf "${cross_src_directory}/ncurses-6.5-20250809"
-
-directory=$(unpack_cross 'ncurses-6.5-2025*.tgz' 'ncurses-6.5-20250809')
+# Fresh, because the cross build below configures in the tree and leaves its
+# generated sources there, where the native build above it picks them up on
+# the next run. unpack_cross_fresh has the details.
+directory=$(unpack_cross_fresh 'ncurses-6.5-2025*.tgz' 'ncurses-6.5-20250809')
 cd "${directory}"
 
 # tic, built to run on *this* machine rather than on the target.
