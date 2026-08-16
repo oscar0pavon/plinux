@@ -419,6 +419,122 @@ if [ "$1" == "check" ]; then
   exit
 fi
 
+# LFS chapters 5 and 6: the cross toolchain and the temporary tools.
+#
+# This is the first thing that writes into lfs/, and it is the only part of
+# the build that runs on the host rather than inside the chroot. Everything
+# it produces is a target binary: chapter 5's compiler lives in lfs/tools and
+# cannot be run here, chapter 6's programs install into lfs/usr and cannot
+# either. Chapter 7 chroots and they become usable.
+#
+# Every step runs under "env -i". That is not tidiness -- it is the same
+# discipline the chroot enforces later, applied to the environment instead of
+# the filesystem. This workstation's PATH carries rust, go, the jdk, rocm,
+# texlive and /musl/bin, and its shell exports MAKEFLAGS, CFLAGS and a locale.
+# Any of those reaching a configure script in chapter 5 is a decision made by
+# this machine about a compiler that is supposed to be independent of it.
+# toolchain/common.sh rebuilds the environment the book specifies from
+# nothing.
+build_toolchain(){
+  local toolchain_selector=${1:-}
+
+  echo "Building the cross toolchain into ${lfs_directory}"
+
+  local stamp_directory=${lfs_directory}/.toolchain
+  mkdir -p "${stamp_directory}"
+
+  local toolchain_force=
+  local toolchain_only=
+
+  case "${toolchain_selector}" in
+    ''|verbose|quiet) ;;
+    force)            toolchain_force=1 ;;
+    *)                toolchain_only=${toolchain_selector} ;;
+  esac
+
+  local toolchain_total
+  toolchain_total=$(grep -cv -e '^[[:space:]]*$' -e '^[[:space:]]*#' \
+                      "${working_directory}/toolchain/order")
+
+  local toolchain_number=0
+  local toolchain_matched=
+  local toolchain_have=0
+  local toolchain_started=${SECONDS}
+  local script
+
+  local status_was_active=${status_active}
+  [ -z "${status_was_active}" ] && status_start
+  status_set "starting"
+
+  while read -r step; do
+    case "${step}" in ''|\#*) continue ;; esac
+
+    toolchain_number=$((toolchain_number + 1))
+
+    if [ -n "${toolchain_only}" ]; then
+      if [ "${step}" != "${toolchain_only}" ]; then
+        continue
+      fi
+      toolchain_matched=1
+    fi
+
+    script=${working_directory}/toolchain/${step}.sh
+
+    if [ ! -x "${script}" ]; then
+      status_stop
+      echo "  ${step}: no ${script}" >&2
+      exit 1
+    fi
+
+    if [ -f "${stamp_directory}/${step}" ] &&
+       [ -z "${toolchain_force}" ] && [ -z "${toolchain_only}" ]; then
+      echo "  have ${step}"
+      toolchain_have=$((toolchain_have + 1))
+      continue
+    fi
+
+    echo "  ${step}"
+    status_set "${step}   [${toolchain_number}/${toolchain_total}]"
+
+    # HOME and TERM are the only two carried through. TERM because the book
+    # carries it and because make's output is unreadable without it; HOME
+    # because a configure script that cannot find one occasionally writes
+    # into /, and that is the host.
+    if run "toolchain-${step}" \
+         env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
+                LFS="${lfs_directory}" \
+                MAKEFLAGS="-j$(nproc)" \
+                /bin/bash "${script}"; then
+      touch "${stamp_directory}/${step}"
+    else
+      status_set "${step}   [${toolchain_number}/${toolchain_total}]   FAILED"
+      status_stop
+      echo >&2
+      echo "${step} failed; the log is ${log_directory}/toolchain-${step}.log" >&2
+      # Each step here is the ground the next one stands on -- a glibc that
+      # did not install cannot be compensated for by carrying on to
+      # libstdc++ -- so this stops rather than counting failures.
+      exit 1
+    fi
+  done < "${working_directory}/toolchain/order"
+
+  [ -z "${status_was_active}" ] && status_stop
+
+  if [ "${toolchain_have}" -ne 0 ]; then
+    echo "  ${toolchain_have} already built"
+  fi
+
+  echo
+
+  if [ -n "${toolchain_only}" ] && [ -z "${toolchain_matched}" ]; then
+    echo "no such toolchain step: ${toolchain_only}" >&2
+    echo "steps are listed in ${working_directory}/toolchain/order" >&2
+    exit 1
+  fi
+
+  echo "cross toolchain built in $(format_duration $((SECONDS - toolchain_started)))"
+}
+
 if [ "$1" == "toolchain" ]; then
   build_toolchain "${2:-}"
   exit
