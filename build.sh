@@ -387,9 +387,9 @@ if [ "$1" == "check" ]; then
       case "${library}" in ld-*) continue ;; esac
 
       # musl's libc.so is its loader, which is already mapped by the time a
-      # NEEDED is looked at; it lives in /usr/lib/musl and is resolved by
+      # NEEDED is looked at; it lives in /musl/lib and is resolved by
       # name rather than found on the search path
-      if [ "${library}" == "libc.so" ] && [ -e "${build_directory}/usr/lib/musl/libc.so" ]; then
+      if [ "${library}" == "libc.so" ] && [ -e "${build_directory}/musl/lib/libc.so" ]; then
         continue
       fi
 
@@ -576,7 +576,7 @@ chroot_run(){
       HOME=/root                                \
       TERM="${TERM:-dumb}"                      \
       PS1='(lfs chroot) \u:\w\$ '               \
-      PATH=/usr/bin:/usr/sbin                   \
+      PATH=/musl/bin:/usr/bin:/usr/sbin          \
       MAKEFLAGS="-j$(nproc)"                    \
       TESTSUITEFLAGS="-j$(nproc)"               \
       "$@"
@@ -760,7 +760,7 @@ build_chroot_packages(){
     if run "chroot-package-${package}" \
          chroot "${lfs_directory}" /usr/bin/env -i    \
            HOME=/root TERM="${TERM:-dumb}"            \
-           PATH=/usr/bin:/usr/sbin                    \
+           PATH=/musl/bin:/usr/bin:/usr/sbin          \
            MAKEFLAGS="-j$(nproc)"                     \
            PLINUX_IN_CHROOT=1                         \
            /bin/bash "/packages/${package}.sh"; then

@@ -67,10 +67,13 @@ export MAKEFLAGS=${MAKEFLAGS:--j32}
 # the same bug with the libraries swapped. Attached to the compiler it goes
 # away the moment the compiler does.
 #
-# The image's musl rather than the host's /musl/lib, for the same reason
-# everything else here builds against obj. If musl is not staged yet the
-# directory simply does not exist, and the specs' -L/musl/lib catches it.
-export CC=${CC:-musl-gcc -L${build_directory}/usr/lib/musl}
+# The image's /musl rather than the build host's, which are now the same path
+# and not the same tree -- packages/musl.sh installs everything but the loader
+# under /musl, matching how this workstation keeps it. Inside the chroot
+# build_directory is empty and this reads -L/musl/lib, which is the image's.
+# If musl is not staged yet the directory does not exist and the specs' own
+# -L/musl/lib is what answers.
+export CC=${CC:-musl-gcc -L${build_directory}/musl/lib}
 
 # Built for the machine that builds them. This is a personal system, so the
 # image only ever runs on this i9-14900K or in the VM, and the VM is started
