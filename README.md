@@ -17,17 +17,16 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and ninety-three packages. About a third make a console system
+prefers it; and a hundred and one packages. A third make a console system
 that can partition a disk, repair its own filesystems, join a wireless network
 and edit its own configuration; another third are the Wayland stack, which
 reaches sway, with foot and wmenu to run inside it; the rest are the toolchain
 and the build tools, which are there because the system builds itself.
 
 There is no service manager and no package manager. There is a compiler:
-`lfs/` carries gcc, binutils, cmake, meson and ninja, so the image can rebuild
+the image carries gcc, binutils, cmake, meson and ninja, so it can rebuild
 itself rather than being something only this workstation can produce. That is
-the newer of the two build models, and the reason the finished tree is 1.4G
-rather than 450M.
+most of the reason the finished tree is 1.5G.
 
 It is also self-hosting in the sense that matters day to day: the machine this
 is developed on runs plinux, and `sys/` is not a template for the image but the
@@ -55,7 +54,7 @@ cd plinux
 
 ./build.sh toolchain                     # LFS 5 and 6: cross compiler, temp tools
 ./build.sh chroot build                  # LFS 7: enter the chroot, build its tools
-./build.sh chroot packages               # LFS 8: the 93 packages, inside it
+./build.sh chroot packages               # LFS 8: the 101 packages, inside it
 ./build.sh chroot cleanup                # LFS 7.13 and 8.85: /tools and the rest
 ./build.sh chroot strip                  # LFS 8.84
 
@@ -65,7 +64,7 @@ sudo ./build.sh virt                     # write virtual_machine/disk.raw
 ```
 
 That is the whole build. About 35 minutes on 32 threads, and 14G of disk while
-it runs — most of which `chroot cleanup` gives back, leaving a 1.4G tree. The
+it runs — most of which `chroot cleanup` gives back, leaving a 1.5G tree. The
 image is 4G because the result carries its own compiler.
 
 It follows the LFS book: a cross toolchain built on the host, a temporary
@@ -104,7 +103,7 @@ Third-party sources live in `src/` alongside them:
 | musl | 1.2.5 | libc for every `p*` component and bash |
 | glibc | 2.42 | staged into the image for dynamically linked binaries |
 
-The packages built by `./build.sh packages` are unpacked into `src/` too, as
+The packages built by `./build.sh chroot packages` are unpacked into `src/` too, as
 versioned directories. They are not tracked; `download.sh` fetches the tarballs
 and the package scripts unpack them.
 
@@ -176,8 +175,9 @@ the `tester` account, and the unpacked source trees. 14G to 1.5G.
 comes back by rename, so no mapped file is ever written — the book's warning
 about stripping a library out from under a running process is real.
 
-**`./build.sh lfs`** builds the half a chroot cannot: pboot, the kernel, pinit,
-pdaemon, pgetty, plogin, the firmware and `sys/`. These are host-built, which
+**`./build.sh`** with no arguments builds the half a chroot cannot: pboot, the
+kernel, pinit, pdaemon, pgetty, plogin, the firmware and `sys/`. These are
+host-built, which
 is defensible where packages would not be — the `p*` binaries link musl
 statically and the kernel and pboot link no libc at all, so nothing there
 loads a library at runtime.
@@ -202,21 +202,25 @@ up.
 
 ### What the host needs
 
-The native build compiles packages with the host toolchain. The chroot build
-uses the host only to build the chapter 5 cross compiler, and nothing after
-that. Either way the host needs:
+The host builds the chapter 5 cross compiler, the kernel and the `p*`
+components. Everything else is built inside the chroot by tools the chroot
+contains, so this list is shorter than it was — `meson`, `ninja` and `pkgconf`
+used to be on it, and are now packages in the image rather than requirements
+of the machine.
 
 | Tool | For |
 | --- | --- |
-| `gcc`, `g++` | everything |
-| `musl-gcc` | the `p*` components, bash, and the standalone musl packages |
-| `make`, `perl`, `python3` | package build systems |
-| `meson`, `ninja` | dbus and, later, the whole Wayland stack |
-| `pkgconf` | finding staged libraries |
+| `gcc`, `g++` | the chapter 5 toolchain, and the kernel |
+| `musl-gcc` | the `p*` components and their static musl link |
+| `make`, `perl`, `python3` | the chapter 5 and 6 build systems |
+| `m4`, `bison`, `flex`, `texinfo` | likewise; LFS lists them as host requirements |
 | `git`, `wget` | `./configure` and `./download.sh` |
 | `upx` | compressing pboot |
 | `qemu-system-x86_64` | `./run` |
 | `sfdisk`, `mkfs.ext4`, `mkfs.fat` | `build.sh virt` and `build.sh usb` |
+
+`docs/` carries the book's own `version-check.sh` in section 2.2; running it
+is the quickest way to find a missing one.
 
 Anything built with `musl-gcc` runs its configure tests on the host, so the
 host needs musl's loader present at the path those binaries name:
@@ -267,12 +271,13 @@ It needs root for `losetup` and `mount`.
 
 ## Downloading sources
 
-Three lists, split by what actually gets built:
+Four lists, split by what actually gets built:
 
 | List | Contents |
 | --- | --- |
-| `wget-list-core` | the console system, one line per entry in `packages/order` |
+| `wget-list-core` | the console system and the toolchain, one line per entry in `packages/order` |
 | `wget-list-gui` | the Wayland stack, on top of the core |
+| `wget-list-toolchain` | what LFS chapters 5 to 7 build and the image never keeps |
 | `wget-list-sysv` | the LFS 12.4 book's own list, not downloaded by default |
 
 ```sh
@@ -312,8 +317,10 @@ as `wget-list-sysv` and put it beside the script to enable `verify`. It lists
 only the book's tarballs, so `wget-list-gui` goes unverified; several of those
 are generated archive URLs with no stable checksum to record anyway.
 
-One thing has no recorded origin: `src/musl` was unpacked by hand and is in no
-list, unlike `src/linux` and `src/pboot`, which `./configure` clones.
+Two things are not tarballs and so are in no list: `src/linux` and `src/pboot`,
+which `./configure` clones. musl used to be a third — a tree unpacked by hand
+with nothing recording where it came from — and is an ordinary entry in
+`wget-list-core` now.
 
 ## Packages
 
@@ -352,8 +359,8 @@ wanting libgd, which is not worth a package here. It wanted libpng too until
 cairo needed one.
 
 Each script sources `packages/common.sh`, which unpacks the tarball from
-`sources/` into `src/` if it is not already there and sets `CC` and the staging
-paths. Everything installs with `DESTDIR=obj`, never into the host. A package
+`sources/` and sets `CC` and the install paths. Inside the chroot `DESTDIR` is
+empty and `make install` installs into `/`, which is `lfs/`. A package
 that completes leaves a stamp in `lfs/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
@@ -363,7 +370,7 @@ its previous `libEGL.so.1.0.0` and `libGLESv2.so.2.0.0` in `lfs/usr/lib` with
 nothing pointing at them. Harmless, but they accumulate; `clean all` is the
 only thing that removes them.
 
-Built so far, 68 packages:
+The console system, 33 packages:
 
 | Package | Why it is here |
 | --- | --- |
@@ -389,6 +396,11 @@ Built so far, 68 packages:
 | expat | XML parsing, which dbus reads its configuration with |
 | dbus | the message bus; iwd will not start without one |
 | iwd | wireless; `init_os` starts it through `set_ip` |
+
+The Wayland stack, 34 more:
+
+| Package | Why it is here |
+| --- | --- |
 | libffi | wayland dispatches protocol calls through it |
 | wayland | the protocol libraries, and wayland-scanner, which is a build tool |
 | wayland-protocols | XML only; xdg-shell is how a client gets a window |
@@ -402,7 +414,6 @@ Built so far, 68 packages:
 | libevdev | wraps the kernel input event protocol for libinput |
 | mtdev | translates the kernel's older multitouch protocol into the current one |
 | libinput | pointer acceleration, gestures, tap-to-click, and the device quirks database |
-| gcc-runtime | libstdc++, libgcc_s and libgomp, copied from the host toolchain |
 | elfutils | libelf only, which mesa's radeonsi hard-requires |
 | libglvnd | vendor-neutral dispatch: libOpenGL, libEGL and the GLES libraries |
 | mesa | GBM, Vulkan and the GL drivers behind libglvnd; radeonsi and RADV, no LLVM |
@@ -424,30 +435,75 @@ Built so far, 68 packages:
 | foot | the terminal; sway's default config opens it on $mod+Return |
 | wmenu | the launcher on $mod+d; wmenu-run feeds it $PATH and execs the pick |
 
+And the toolchain and build tools, 34 more, which the image has because it
+builds itself. None of these existed here while packages were compiled on the
+build machine and staged; every one was something the host supplied without
+anyone noticing until the build moved into a chroot.
+
+| Package | Why it is here |
+| --- | --- |
+| binutils, gcc | the compiler and linker, so the image can rebuild itself |
+| gmp, mpfr, mpc | gcc's arbitrary-precision arithmetic |
+| m4, make, patch, file | chapter 6 built these; chapter 8 replaces them |
+| bison, flex | parser and lexer generators |
+| bc | the kernel's build system computes constants with it |
+| bzip2 | not to link against — tar cannot read a `.tar.bz2` without it |
+| gperf | udev's rule lookup tables |
+| pkgconf | nothing from libffi onward configures without a pkg-config |
+| autoconf, automake, libtool | anything regenerating a build system after a patch |
+| perl | half of the chapter 8 packages run a perl script somewhere |
+| gettext, texinfo | message catalogues, and makeinfo |
+| python | meson is written in it |
+| flit-core, packaging, wheel, setuptools | pip's build backends |
+| ninja, meson | the build system most of the Wayland stack uses |
+| markupsafe, jinja2 | udev generates sources from templates |
+| mako, pyyaml | so does mesa, from a different pair |
+| cmake | glslang builds with nothing else |
+| glslang | mesa compiles RADV's shaders with `glslangValidator` |
+
 dbus is the first package here that is not in the LFS book. The book builds no
 D-Bus at all — its only mention is the `messagebus` user — so `packages/dbus.sh`
 follows upstream rather than `docs/`. Note that dbus 1.16 dropped autotools:
 there is no `configure` in the tarball, only meson.
 
 The two C libraries coexist: separate loaders, separate names, and each binary
-names the one it was linked against. musl installs its libraries in
-`/usr/lib/musl`, because musl's `libc.so` *is* its loader while glibc installs
-a linker script under that name — sharing a directory means one destroys the
-other.
+names the one it was linked against. musl lives entirely in `/musl` — headers,
+libraries, crt files, specs and `musl-gcc` — which is how this workstation has
+always kept it. The single exception is the loader, at
+`/usr/lib/ld-musl-x86_64.so.1`, because that path is written into the
+`PT_INTERP` of every musl binary and the kernel resolves it before anything
+else exists.
 
-Still to come is the rest of the Wayland stack: the text stack, freetype
-through pango; then json-c, wlroots and sway.
-Everything in it is built against glibc, not musl: mesa and LLVM are not
+That arrangement replaced two narrower ones. musl's `libc.so` *is* its loader
+while glibc installs a linker script under the same name, so one `/usr/lib`
+meant whichever built second destroyed the other's; and two C libraries were
+also describing themselves in one `/usr/include`, where four musl headers
+outlived glibc and `stropts.h` got included beside glibc's declarations. Both
+were the same problem answered one directory at a time.
+
+The whole Wayland stack is built against glibc, not musl: mesa is not
 realistically musl-buildable here, and a stack cannot be split between two C
 libraries.
 
-Also worth having, none of them on the critical path: psmisc, iproute2,
-iana-etc, kbd, and man-db with groff — nothing in the image can read a man page.
+Still missing from the book, none on the critical path: man-db with groff,
+man-pages and libpipeline — nothing in the image can read a man page, though
+`less` is built and 24M of them are installed. Then kbd, without which the
+console has no way to load a keymap; iana-etc, so `/etc/services` exists;
+psmisc for `killall` and `fuser`; iproute2 for `ip`; and inetutils for `ping`.
+Tcl, Expect and DejaGNU are in no list because they exist only to run test
+suites, and nothing here runs them.
 
 ### Building against the image, not the build machine
 
-This is the one thing about the build that is easy to get wrong, because
-getting it wrong looks like success.
+None of this runs any more. It is kept because it is the argument for what
+replaced it: `packages/common.sh` sees `PLINUX_IN_CHROOT`, empties
+`build_directory` and switches the sysroot off, because inside `lfs/` there is
+no second tree for a search to escape into. What follows is what had to be
+arranged by hand when there was, and is written in the past tense for that
+reason.
+
+This was the one thing about the build that was easy to get wrong, because
+getting it wrong looked like success.
 
 These builds run on a workstation that is itself running plinux. A package
 that finds a library or a header in the host's `/usr` therefore links against
@@ -485,12 +541,6 @@ says. `AC_CHECK_LIB` and `cc.find_library` therefore still see the build
 machine. `LDFLAGS` carries `-L obj/usr/lib` to put the image first in that
 order, which is as far as a native build reaches.
 
-None of this runs any more, and it is kept because it is the argument for
-what replaced it. `packages/common.sh` sees `PLINUX_IN_CHROOT`, empties
-`build_directory` and switches the sysroot off, because inside `lfs/` there is
-no second tree for a search to escape into. What follows is what had to be
-arranged by hand when there was.
-
 **And `-L` does not cover indirect dependencies.** When a program links
 against `libgio`, ld follows `libgio`'s own `DT_NEEDED` to `libmount.so.1` to
 check the symbols it imports — and for *that* search it uses `-rpath-link`,
@@ -500,12 +550,13 @@ image's util-linux 2.41.1 and everything linking against glib afterwards
 resolved through the host's 2.39.1, where the function glib had just called
 does not exist.
 
-**Neither are GCC's own headers.** `#include <string>` resolves to the host's
+**Neither were GCC's own headers.** `#include <string>` resolved to the host's
 `/usr/include/c++/15.2.0/string` even under the sysroot, while `#include
-<stdio.h>` comes from `obj`. The C++ standard library is the host's by
-construction, which is why `packages/gcc-runtime.sh` copies the matching
-`libstdc++`, `libgcc_s` and `libgomp` out of the same GCC rather than building
-them.
+<stdio.h>` came from `obj`. The C++ standard library was the host's by
+construction, so `packages/gcc-runtime.sh` copied the matching `libstdc++`,
+`libgcc_s` and `libgomp` out of the same GCC rather than building them —
+"because building them means building GCC", as its own comment put it. The
+chroot build does build GCC, so that script is gone.
 
 In practice the two halves catch each other. mesa's lm-sensors probe linked
 against the host's `libsensors` and defined `HAVE_LIBSENSORS`, and then the
@@ -533,19 +584,22 @@ newer set over them breaks.
 ## Running
 
 ```sh
-./run                            # GTK window, console on the emulated display
-./run headless                   # no window, console on serial
-IMAGE=disk-lfs.raw ./run         # boot a different image
+./run                       # GTK window, console on the emulated display
+./run headless              # no window, console on serial
 ./run help
 ```
 
-`IMAGE` defaults to `disk.raw`, which is what `virtual_machine/configure.sh`
-creates by default. The chroot build needs its own, because a tree carrying a
-compiler does not fit the 1G that was sized for one without:
+`IMAGE` selects a different image in both `./run` and `build.sh virt`, which
+is worth having while a new build is unproven — the old one stays bootable:
 
 ```sh
-cd virtual_machine && IMAGE=disk-lfs.raw SIZE_MB=4096 ./configure.sh
+cd virtual_machine && IMAGE=spare.raw ./configure.sh
+sudo IMAGE=spare.raw ./build.sh virt
+IMAGE=spare.raw ./run
 ```
+
+`configure.sh` makes a 4096M image by default. That was 1024M until the image
+gained a compiler.
 
 The machine is deliberately close to the workstation: q35, `-cpu host`, 8 cpus,
 8G, the disk on an NVMe controller, xHCI, and virtio for the display, keyboard
@@ -723,7 +777,7 @@ installs it as part of a normal build:
 | --- | --- | --- |
 | `sys/root/` | `/root/` | `.bash_profile`, `.bashrc`, `shell_config.sh` |
 | `sys/scripts/` | `/usr/bin/` | `init_os`, `set_ip`, `pdevices` |
-| `sys/etc/` | `/etc/` | staged whole: `passwd`, `group`, `fstab`, `iwd/main.conf` |
+| `sys/etc/` | `/etc/` | staged whole: `passwd`, `fstab`, `iwd/main.conf` |
 | `sys/kernel_config` | `src/linux/.config` | installed by `./configure` |
 
 `sys/etc/` is copied wholesale rather than file by file, so a package that
@@ -731,8 +785,14 @@ needs a configuration file only has to have it added there — before that, each
 new file also needed a line in `build.sh`, and one of them was missed for as
 long as iwd had been in the image.
 
-Only root exists on this system, so `/etc/passwd` is a single line and nothing
-is chmodded during staging.
+Only root exists on this system, so `/etc/passwd` is two lines — root and
+messagebus — and nothing is chmodded during staging.
+
+`/etc/group` is deliberately *not* in `sys/etc/`. It used to be, and staging it
+threw away the eleven groups udev's rules name by hand — audio, cdrom, dialout,
+disk, input, kmem, kvm, lp, tape, tty, video — leaving device nodes owned by
+root instead. The book's `/etc/group`, written by `toolchain/chroot/layout.sh`,
+has all of them, plus `netdev`, which iwd's D-Bus policy names.
 
 These files are also the ones a plinux workstation runs from directly, by
 symlink rather than by copy. Editing them changes the running machine as well
