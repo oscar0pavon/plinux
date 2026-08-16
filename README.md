@@ -17,12 +17,17 @@ afternoon.
 
 The system it produces is deliberately small: one user, who is root; two C
 libraries, because `udev` will not build against musl and everything else
-prefers it; and sixty-eight packages. Thirty-three of them make a console
-system that can partition a disk, repair its own filesystems, join a wireless
-network and edit its own configuration; the other thirty-five are the Wayland
-stack, which now reaches sway, with foot and wmenu to run inside it. There is no service manager, no package manager,
-and no toolchain in the image — packages are compiled on the host and staged
-into `obj/`, which becomes the root filesystem.
+prefers it; and ninety-three packages. About a third make a console system
+that can partition a disk, repair its own filesystems, join a wireless network
+and edit its own configuration; another third are the Wayland stack, which
+reaches sway, with foot and wmenu to run inside it; the rest are the toolchain
+and the build tools, which are there because the system builds itself.
+
+There is no service manager and no package manager. There is a compiler:
+`lfs/` carries gcc, binutils, cmake, meson and ninja, so the image can rebuild
+itself rather than being something only this workstation can produce. That is
+the newer of the two build models, and the reason the finished tree is 1.4G
+rather than 450M.
 
 It is also self-hosting in the sense that matters day to day: the machine this
 is developed on runs plinux, and `sys/` is not a template for the image but the
@@ -32,27 +37,64 @@ there changes the workstation and the next image at the same time.
 The three ways to run it: `./run` boots the image under QEMU, `build.sh usb`
 writes it to a USB stick as a bootable rescue system that carries its own
 identifiers, and `build.sh` plus the `pboot` install steps put it on real
-hardware. The Wayland stack now reaches sway, though it has been built and not yet
-run.
+hardware.
+
+The chroot-built image boots: pboot loads the kernel, `pinit` comes up as PID
+1, `plogin` reaches a shell, and pdaemon starts udevd, seatd, dbus and iwd,
+with sway opening as a client on seat0. That has been verified on the serial
+console; sway has not yet been looked at on a display.
 
 ## Getting it
+
+There are two ways to build this, and they produce two different trees.
+
+**The chroot build**, into `lfs/`, is the one to use. It follows the LFS book:
+a cross toolchain, a temporary system, a chroot, and then everything else
+built inside it, where the build machine cannot be reached at all.
 
 ```sh
 git clone https://github.com/oscar0pavon/plinux
 cd plinux
-./configure              # clone src/linux and src/pboot, install the kernel config
-./download.sh all        # fetch every source into sources/
-./build.sh packages      # the 68 packages in packages/order, into obj/
-./build.sh               # pboot, kernel, p* components -- and any packages still unbuilt
-./build.sh check         # find binaries whose libraries the image lacks
-sudo ./build.sh virt     # write virtual_machine/disk.raw
-./run                    # boot it
+./configure                              # clone src/linux and src/pboot
+./download.sh all                        # every source into sources/
+./download.sh --list wget-list-toolchain # the chapter 5-7 toolchain as well
+
+./build.sh toolchain                     # LFS 5 and 6: cross compiler, temp tools
+./build.sh chroot build                  # LFS 7: enter the chroot, build its tools
+./build.sh chroot packages               # LFS 8: the 93 packages, inside
+./build.sh chroot cleanup                # LFS 7.13 and 8.85: /tools and the rest
+./build.sh chroot strip                  # LFS 8.84
+./build.sh lfs                           # pboot, kernel, p* components, sys/
+
+cd virtual_machine
+IMAGE=disk-lfs.raw SIZE_MB=4096 ./configure.sh   # once
+cd ..
+sudo IMAGE=disk-lfs.raw ./build.sh virt lfs      # write the image
+IMAGE=disk-lfs.raw ./run                         # boot it
 ```
 
-That is the whole build. It takes about 45 minutes on 32 threads, most of it
-in the packages, and needs roughly 4G for `src/` and `sources/` on top of the
-450M image. The steps are explained under [Building from
-scratch](#building-from-scratch) below.
+About 35 minutes on 32 threads and 14G of disk while it runs, most of which
+`chroot cleanup` gives back — the finished tree is 1.4G stripped. It needs a
+4G image rather than the 1G default, because the result carries its own
+compiler.
+
+**The native build**, into `obj/`, is the original: packages compiled by the
+host toolchain and staged, with no chroot anywhere.
+
+```sh
+./configure
+./download.sh all
+./build.sh packages      # into obj/, using this workstation's compiler
+./build.sh               # components, remaining packages, sys/
+./build.sh check         # find binaries whose libraries the image lacks
+sudo ./build.sh virt
+./run
+```
+
+It is faster and it is what `./build.sh check` exists for, because a package
+that finds a host library there builds cleanly and fails only in the VM. The
+chroot build removes that failure mode rather than detecting it. Both are
+explained under [Building from scratch](#building-from-scratch).
 
 `./configure` clones two repositories that are developed outside this tree —
 the kernel from mainline and `pboot` from its own repository — because a
@@ -91,9 +133,12 @@ configure             clone the kernel and pboot, install sys/kernel_config
 download.sh           fetch source tarballs into sources/
 wget-list-core        the sources the console system is built from
 wget-list-gui         the Wayland stack, fetched separately
+wget-list-toolchain   the chapter 5-7 toolchain, which the image never keeps
 wget-list-sysv        the LFS book's own list, kept for reference
 run                   symlink to virtual_machine/start.sh
-obj/                  staged root filesystem; becomes / in the image
+obj/                  staged root filesystem, native build; becomes / in the image
+lfs/                  the same, built in a chroot; $LFS in the LFS book's terms
+toolchain/            LFS chapters 5-7: the cross toolchain and the chroot steps
 packages/             one build script per package, plus the build order
 src/                  component sources and third-party trees
 sources/              downloaded tarballs and patches
@@ -106,8 +151,69 @@ virtual_machine/      QEMU image, OVMF firmware, pboot.conf, launcher
 
 ## Building from scratch
 
-The seven commands are under [Getting it](#getting-it). What each one is for,
-and why they run in that order:
+Both sequences are under [Getting it](#getting-it). What each command is for,
+and why they run in that order.
+
+### The chroot build
+
+This is LFS 12.4 as the book writes it, with plinux's package set in place of
+the book's chapter 8.
+
+**`./build.sh toolchain`** walks `toolchain/order`: chapters 5 and 6. Binutils
+and GCC pass 1, the kernel API headers, glibc, libstdc++, then seventeen tools
+cross-compiled by that toolchain into `lfs/usr`. Every step runs under
+`env -i`, so nothing this workstation exports reaches it, and stamps in
+`lfs/.toolchain` make it resumable. About eleven minutes; GCC is most of it.
+
+The glibc step ends with the book's sanity checks run as tests rather than
+printed to compare by eye — the interpreter path, the three start files, the
+include path, the linker's search directories, which `libc.so.6` was opened
+and which loader was found. If any of the seven fail the walk stops before
+chapter 6, because a toolchain aimed at the wrong tree produces a system that
+fails much later and for no visible reason.
+
+**`./build.sh chroot build`** mounts the virtual kernel filesystems into
+`lfs/`, chroots, and walks `toolchain/chroot/order`: the full directory tree
+and `/etc/passwd`, then gettext, bison, perl, python, texinfo and util-linux.
+
+**`./build.sh chroot packages`** runs `packages/order` inside that chroot.
+The same scripts that build `obj/`, against `/` instead — `packages/common.sh`
+sees `PLINUX_IN_CHROOT` and empties `build_directory`, so `DESTDIR` goes empty
+and the sysroot machinery switches off, because there is no second tree left
+for a search to escape into. Stamps go in `lfs/.packages`.
+
+**`./build.sh chroot cleanup`** is LFS 7.13.1 and 8.85: `/tools`, the chapter
+6 toolchain still installed under its target triplet, the libtool `.la` files,
+the `tester` account, and the unpacked source trees. 14G to 1.5G.
+
+**`./build.sh chroot strip`** is 8.84. Every binary goes through a copy and
+comes back by rename, so no mapped file is ever written — the book's warning
+about stripping a library out from under a running process is real.
+
+**`./build.sh lfs`** builds the half a chroot cannot: pboot, the kernel, pinit,
+pdaemon, pgetty, plogin, the firmware and `sys/`. These are host-built, which
+is defensible where packages would not be — the `p*` binaries link musl
+statically and the kernel and pboot link no libc at all, so nothing there
+loads a library at runtime.
+
+**`sudo IMAGE=disk-lfs.raw ./build.sh virt lfs`** writes `lfs/` rather than
+`obj/`. `IMAGE` selects the disk in both `build.sh virt` and `./run`; it
+defaults to `disk.raw` in both.
+
+Useful on their own:
+
+```sh
+./build.sh chroot                    # interactive shell inside lfs/
+./build.sh chroot packages <name>    # rebuild one package in there
+./build.sh chroot umount             # take the mounts down by hand
+./build.sh toolchain force           # rebuild chapters 5 and 6
+```
+
+The mounts come down on every exit path, including a failed build or a Ctrl-C
+out of the interactive shell, and `clean` refuses to run while any of them is
+up.
+
+### The native build
 
 **`./configure`** clones `src/linux` and `src/pboot` and copies
 `sys/kernel_config` to `src/linux/.config`. It has to come first — not because
@@ -156,8 +262,9 @@ Afterwards, the loop while working on it is usually just:
 
 ### What the host needs
 
-Packages are compiled by the host toolchain; nothing is cross-compiled and
-there is no chroot. Required:
+The native build compiles packages with the host toolchain. The chroot build
+uses the host only to build the chapter 5 cross compiler, and nothing after
+that. Either way the host needs:
 
 | Tool | For |
 | --- | --- |
@@ -184,13 +291,22 @@ like a broken compiler but is only a missing interpreter.
 ### build.sh
 
 ```sh
-./build.sh help          # all commands
-./build.sh               # everything: components, then any unbuilt packages
-./build.sh packages      # the packages in packages/order
-./build.sh virt          # copy obj/ into virtual_machine/disk.raw
-./build.sh usb /dev/sdX  # write obj/ to a USB disk as a bootable rescue system
-./build.sh check         # find binaries whose libraries are missing
-./build.sh clean all     # clean sources and delete obj/
+./build.sh help            # all commands
+./build.sh                 # everything: components, then any unbuilt packages
+./build.sh packages        # the packages in packages/order, natively into obj/
+./build.sh check           # find binaries whose libraries are missing
+./build.sh virt            # copy the staged tree into a raw disk image
+./build.sh usb /dev/sdX    # write it to a USB disk as a bootable rescue system
+./build.sh clean all       # clean sources and delete obj/
+
+./build.sh toolchain       # LFS chapters 5 and 6, into lfs/
+./build.sh chroot          # interactive shell in lfs/
+./build.sh chroot build    # LFS chapter 7, inside it
+./build.sh chroot packages # LFS chapter 8: packages/order, inside it
+./build.sh chroot cleanup  # LFS 7.13 and 8.85
+./build.sh chroot strip    # LFS 8.84
+./build.sh chroot umount   # take the chroot mounts down
+./build.sh lfs             # components and sys/ into lfs/ instead of obj/
 ```
 
 Build output is streamed as well as written to `logs/`. Add `quiet` to any
@@ -236,10 +352,14 @@ Three lists, split by what actually gets built:
 of its entries are the book's, and about sixty of those are the chapter 5 and 6
 temporary toolchain — gcc, binutils, gmp, mpfr, mpc, m4, make, perl, python,
 tcl, expect, autoconf, libtool, texinfo — which LFS builds so that chapter 8
-can be built inside a chroot. plinux does none of that. It compiles against the
-host toolchain and stages into `obj/`, so those tarballs are several hundred
-megabytes that nothing ever unpacks. The file stays in the tree as the starting
-point if the self-hosting toolchain is ever built.
+can be built inside a chroot.
+
+That is no longer something plinux skips. `wget-list-toolchain` fetches what
+chapters 5 to 7 need — binutils, gcc, gmp, mpfr, mpc, m4, make, patch, file,
+ncurses, gettext, bison, perl, python, texinfo — and `./build.sh toolchain`
+builds them. `wget-list-sysv` remains unfetched because it is the book's whole
+list, including packages plinux replaces outright, and because several of its
+entries exist only to run test suites that are not run here.
 
 Each file is fetched separately so a bad mirror is named rather than lost in
 the noise. Complete files are skipped, partial ones resumed, and failures are
@@ -415,7 +535,13 @@ which resolves to the host's `/usr/lib` and is *not* sysroot-relative, so
 `-lelf` and `-lsensors` link against the host's copies whatever `--sysroot`
 says. `AC_CHECK_LIB` and `cc.find_library` therefore still see the build
 machine. `LDFLAGS` carries `-L obj/usr/lib` to put the image first in that
-order, which is as far as a native build reaches without a chroot.
+order, which is as far as a native build reaches.
+
+None of this machinery does anything in the chroot build, and that is the
+point of it: `packages/common.sh` sees `PLINUX_IN_CHROOT`, empties
+`build_directory` and switches the sysroot off, because inside `lfs/` there is
+no second tree for a search to escape into. What follows describes the native
+build into `obj/`, where there is.
 
 **And `-L` does not cover indirect dependencies.** When a program links
 against `libgio`, ld follows `libgio`'s own `DT_NEEDED` to `libmount.so.1` to
@@ -456,9 +582,18 @@ against the host's copy.
 ## Running
 
 ```sh
-./run              # GTK window, console on the emulated display
-./run headless     # no window, console on serial
+./run                            # GTK window, console on the emulated display
+./run headless                   # no window, console on serial
+IMAGE=disk-lfs.raw ./run         # boot a different image
 ./run help
+```
+
+`IMAGE` defaults to `disk.raw`, which is what `virtual_machine/configure.sh`
+creates by default. The chroot build needs its own, because a tree carrying a
+compiler does not fit the 1G that was sized for one without:
+
+```sh
+cd virtual_machine && IMAGE=disk-lfs.raw SIZE_MB=4096 ./configure.sh
 ```
 
 The machine is deliberately close to the workstation: q35, `-cpu host`, 8 cpus,
@@ -611,12 +746,20 @@ Two packages stay because only one program in each is superseded:
 Shadow is not built. The account database is the single root entry in
 `sys/etc/passwd`, which is all a one-user system needs.
 
-The larger departure is that LFS builds inside a chroot, on a toolchain it
-builds first, and installs straight into `/usr`. plinux builds on the host
-toolchain and stages into `obj/`, so book recipes need `DESTDIR` or an
-equivalent prefix before being run here — and so the isolation a chroot gives
-for free has to be arranged explicitly, which is what the sysroot section
-above is about.
+LFS builds inside a chroot, on a toolchain it builds first, and installs
+straight into `/usr`. plinux used to do neither, staging into `obj/` from the
+host toolchain instead — which meant book recipes needed `DESTDIR`, and the
+isolation a chroot gives for free had to be arranged with `--sysroot` and
+`-rpath-link` instead.
+
+It now does both, and `./build.sh toolchain` through `./build.sh chroot
+packages` is the book's chapters 5 to 8. The native build into `obj/` is still
+there and still works. The difference it makes is not theoretical: moving the
+build into the chroot turned up nine things the host had been supplying
+invisibly, among them a specific `automake-1.16` this workstation happened to
+have installed, `pkgconf`, `meson`, `gperf`, and three python modules mesa
+generates its own source with. None of them appear in any binary's `NEEDED`,
+so `./build.sh check` could not have found any of them.
 
 ## System configuration
 
