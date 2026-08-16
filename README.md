@@ -95,17 +95,6 @@ Everything with a `p` prefix is written for this project:
 | [pgetty](src/pgetty) | Console getty, derived from mingetty |
 | [plogin](src/plogin) | Sets up the root environment and execs the shell |
 
-Third-party sources live in `src/` alongside them:
-
-| Source | Version | Notes |
-| --- | --- | --- |
-| linux | mainline | cloned by `./configure`, configured from `sys/kernel_config` |
-| musl | 1.2.5 | libc for every `p*` component and bash |
-| glibc | 2.42 | staged into the image for dynamically linked binaries |
-
-The packages built by `./build.sh chroot packages` are unpacked into `src/` too, as
-versioned directories. They are not tracked; `download.sh` fetches the tarballs
-and the package scripts unpack them.
 
 ## Layout
 
