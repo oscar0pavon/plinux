@@ -134,7 +134,7 @@ fi
 # Without this an unrecognised argument falls through to a full build, so a
 # typo like "./build.sh vrit" rebuilds everything instead of staging the image
 case "${1:-}" in
-  ""|virt|usb|clean|toolchain|chroot|packages|check|verbose|quiet) ;;
+  ""|lfs|virt|usb|clean|toolchain|chroot|packages|check|verbose|quiet) ;;
   *)
     echo "unknown command: $1" >&2
     echo >&2
@@ -142,6 +142,34 @@ case "${1:-}" in
     exit 1
     ;;
 esac
+
+# Which tree this build puts things in.
+#
+# obj/ is the original: packages compiled on the host and staged into it.
+# lfs/ is the one the chroot built, and "./build.sh lfs" is how the half that
+# cannot be built in a chroot gets in there -- the bootloader, the kernel, the
+# p* components and sys/.
+#
+# Those are host-built either way, and for these particular things that is
+# defensible rather than a compromise. pinit, plogin, pgetty and pdaemon link
+# musl statically, so nothing of the host survives into them but code from the
+# same musl 1.2.5 the image has; the kernel and pboot are freestanding and
+# link no libc at all. Nothing here loads a library at runtime, which is the
+# whole of what the chroot exists to control.
+#
+# The packages are a different matter and are not built by this path: for
+# lfs/ they come from "./build.sh chroot packages".
+# Scanned across every argument rather than tested against $1, so it composes
+# with the commands that take one: "./build.sh lfs" builds into lfs/, and
+# "./build.sh virt lfs" images from it. Same shape as verbose and quiet below.
+target=obj
+
+for argument in "$@"; do
+  if [ "${argument}" == "lfs" ]; then
+    target=lfs
+    build_directory=${lfs_directory}
+  fi
+done
 
 # Build output is streamed by default. It still goes to logs/ either way, but
 # watching a compile happen is worth more than a clean screen, and a build that
@@ -1116,6 +1144,16 @@ if [ "$1" == "chroot" ]; then
     packages)
       build_chroot_packages "${3:-}"
       ;;
+    cleanup)
+      # LFS 7.13.1 and 8.85. Not a step in toolchain/chroot/order, because
+      # that file is chapter 7 and this has to run after chapter 8 -- put it
+      # in the order and it would delete the compiler chapter 8 is about to
+      # be built with.
+      chroot_mount
+      trap 'chroot_umount' EXIT
+      echo "Cleaning up ${lfs_directory}"
+      run "chroot-cleanup" chroot_run /bin/bash /toolchain/cleanup.sh || exit 1
+      ;;
     umount)
       if chroot_umount; then
         echo "unmounted"
@@ -1528,8 +1566,21 @@ if have_source "Building kernel" ${src_directory}/linux; then
   # default for each of them instead of prompting and stalling the build.
   # Refreshed with the kernel, so a config or version change that adds an
   # ioctl or a structure field reaches the packages built against it.
-  run kernel-headers make headers_install INSTALL_HDR_PATH=${build_directory}/usr \
-    || failed=$((failed + 1))
+  # Not into lfs/. That tree's /usr/include is chapter 5's, and it is
+  # deliberately linux-6.16.1 rather than src/linux -- toolchain/linux-headers.sh
+  # explains at length why a package wants the kernel vintage it was written
+  # against, and what installing 7.x over it costs: gcc's libsanitizer
+  # includes <linux/scc.h>, which 6.16 has and 7.2 dropped. Staging the
+  # running kernel's headers here would put that back.
+  #
+  # obj/ has no such arrangement -- nothing else manages its headers -- so
+  # there it is still the right thing to do.
+  if [ "${target}" == "obj" ]; then
+    run kernel-headers make headers_install INSTALL_HDR_PATH=${build_directory}/usr \
+      || failed=$((failed + 1))
+  else
+    echo "  kernel-headers: skipped, ${build_directory}/usr/include is chapter 5's"
+  fi
 
   if run kernel-config make olddefconfig && run kernel make; then
     # x86_64 was merged into arch/x86 in 2.6.24; arch/x86_64 has not existed
@@ -1643,7 +1694,16 @@ fi
 # whole image now. After rather than before, because the thing most
 # recently edited is almost always a component, and its build -- or its
 # failure -- should surface first, not behind a walk of the order file.
-build_packages "" brief
+#
+# Skipped for lfs/, where they are the chroot's: build_packages compiles
+# natively against this workstation, which is the arrangement the chroot
+# replaced. "./build.sh chroot packages" is the equivalent there.
+if [ "${target}" == "obj" ]; then
+  build_packages "" brief
+else
+  echo "Packages: skipped, lfs/ gets them from ./build.sh chroot packages"
+  echo
+fi
 
 echo "Installing system configuration"
 status_set "Installing system configuration"
