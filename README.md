@@ -644,25 +644,60 @@ refreshed from the workstation: `CONFIG_DRM_VIRTIO_GPU` for the display, and
 ## Rescue USB
 
 ```sh
-sudo ./build.sh usb /dev/sdX
+sudo ./build.sh usb image     # build usb.img from lfs/
+sudo ./build.sh usb /dev/sdX  # write it to a stick, building it first if needed
 ```
 
-Writes `lfs/` to a USB disk as a self-contained bootable system. The device has
-to be named in full; there is no default, and the command refuses anything that
-is not a whole disk, is the disk the host booted from, or has a filesystem
-mounted. It then asks for `ERASE` to be typed, which `USB_YES=1` skips.
+`usb.img` is the rescue system as a file: GPT, a 256M FAT32 EFI system
+partition, and an ext4 root sized to the tree plus a quarter — about 2.3G for
+1.5G of system, sparse, so it occupies what is in it. It is the thing to keep
+or to hand to somebody else, and writing a stick is now one `dd` of it.
 
-The layout is the same as the VM image: GPT, a 256M FAT32 EFI system partition
-and the rest ext4.
+It used to write the stick directly, partitioning it and copying the system in
+file by file, and that is why this changed. `lfs/` is 39,000 files, 7,000
+symlinks and 2,400 directories, and a flash controller answers small scattered
+writes at a fraction of the rate it answers one long stream: measured on the
+stick this was written for, 227 KB/s with the device busy the whole time — an
+hour and a half for a copy that reached the page cache in thirty seconds. The
+small writes now land on the NVMe, where nothing notices them, and the stick
+gets the finished image in one sequential pass.
 
-The part worth knowing is what happens after the filesystems are made. A stick
-cannot use the `pboot.conf` and `/etc/fstab` that the VM image uses, because
+The device has to be named in full; there is no default, and the command
+refuses anything that is not a whole disk, is the disk the host booted from, or
+has a filesystem mounted. It then asks for `ERASE` to be typed, which
+`USB_YES=1` skips. The image is rebuilt first if anything in `lfs/` is newer
+than it.
+
+`dd` runs with `oflag=direct`, which matters for more than speed: without it
+the write goes to the page cache at memory speed and the kernel spends the next
+hour handing it to the stick, owning data no signal can take back — killing the
+script cancels nothing, and the only way to stop it is to make the device
+disappear. With direct I/O every block reaches the device before the next one
+is read, so Ctrl-C stops the write where it stands. Interrupting at any point
+unmounts what is mounted, detaches the loop device, deletes the half-built
+image, and says whether the stick was left part written.
+
+After the write, the root partition is grown to fill the stick with
+`sfdisk -N 2` and `resize2fs` — the image is sized to the system, so a 2.3G
+image on a 16G stick would otherwise leave 14G unreachable. `sfdisk -N` keeps
+the partition entry's UUID, which is what `pboot.conf` names, and a failure
+here is a warning rather than an error: the stick is bootable at the image's
+size either way.
+
+A stick cannot use the `pboot.conf` and `/etc/fstab` the VM image uses, because
 those name `/dev/nvme0n1p2` and the VM's UUIDs; booted on another machine they
-would send the kernel looking for that machine's disk. So `usb` reads the
-identifiers back off the device it just partitioned and generates both files
-against them: `root=PARTUUID=` for the kernel, which resolves it natively from
-the GPT with no initramfs, and `UUID=` in `/etc/fstab`, which `mount` resolves
-through libblkid. The stick boots itself, wherever it is plugged in.
+would send the kernel looking for that machine's disk. So the image build reads
+the identifiers back off the filesystems it has just made and generates both
+files against them: `root=PARTUUID=` for the kernel, which resolves it natively
+from the GPT with no initramfs, and `UUID=` in `/etc/fstab`, which `mount`
+resolves through libblkid.
+
+Those identifiers are now the *image's*, so every stick written from one image
+answers to the same PARTUUID. Against the machine it was built on that is still
+distinct — a fresh GPT gets random UUIDs — but two sticks from one image in the
+same machine would collide, and the kernel would take whichever it enumerated
+first. That is the trade for having a file to distribute: the image has to name
+a root that exists before it is written to anything.
 
 ## Boot sequence
 

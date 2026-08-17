@@ -113,3 +113,8 @@ src/wmenu/
 
 src/pdaemon/pdaemon
 src/musl-*/
+
+# built by ./build.sh usb image: the rescue disk as a file, 2.3G of it, and
+# the .new it is assembled under before being renamed into place
+usb.img
+usb.img.new
