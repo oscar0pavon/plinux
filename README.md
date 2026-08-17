@@ -137,7 +137,9 @@ the image never keeps. See [Downloading sources](#downloading-sources).
 and GCC pass 1, the kernel API headers, glibc, libstdc++, then seventeen tools
 cross-compiled by that toolchain into `lfs/usr`. Every step runs under
 `env -i`, so nothing this workstation exports reaches it, and stamps in
-`lfs/.toolchain` make it resumable. About eleven minutes; GCC is most of it.
+`lfs/.toolchain` make it resumable. A step that fails is run again before the
+walk gives up on it, the way the packages are. About eleven minutes; GCC is
+most of it.
 
 The glibc step ends with the book's sanity checks run as tests rather than
 printed to compare by eye — the interpreter path, the three start files, the
@@ -241,6 +243,32 @@ like a broken compiler but is only a missing interpreter.
 
 Build output is streamed as well as written to `logs/`. Add `quiet` to any
 command, or set `VERBOSE=0`, to only log it and print one line per step.
+
+A step that fails is run again. This applies to all three walks — chapters 5
+and 6, chapter 7, and the packages — and to nothing else: three attempts in
+all, the last of them at `-j1`, and the stamp is written only if one of them
+succeeds. It is not there for a step that is broken, which now fails three
+times and takes three times as long to say so. It is there for the two
+failures that have nothing to do with the source: a `-j32` make that races,
+which the serial attempt settles, and this 14900K faulting under sustained
+all-core load, which arrives as an internal compiler error or a signal 11 in
+a file that compiled yesterday and gets through on a second run. Either one
+used to end a forty-minute build at package sixty.
+
+Retrying is only safe because re-running a script after a failure is already
+the property everything here is written to have: `unpack` and `unpack_cross`
+keep the tree they find, `apply_patch` notices a patch that is already in,
+`meson_setup` removes its build directory, and make resumes at the file that
+failed rather than at the start. The exceptions are ncurses and file in
+chapter 6, which build twice out of one tree and so use `unpack_cross_fresh`
+— their retry starts from the tarball and costs the whole package.
+
+An attempt that is followed by a retry keeps its log as
+`logs/<step>.attempt-<n>.log`, so a step that only builds at `-j1` says so
+instead of silently succeeding; the last attempt keeps the usual
+`logs/<step>.log`. `PLINUX_ATTEMPTS` sets the count, and `PLINUX_ATTEMPTS=1`
+turns retrying off, which is what to use when a step genuinely does not build
+and the retries are only slowing the diagnosis down.
 
 `./configure` is safe to re-run: repositories already cloned are reported and
 skipped, and a directory that exists but is not a clone is left alone rather
@@ -353,26 +381,9 @@ empty and `make install` installs into `/`, which is `lfs/`. A package
 that completes leaves a stamp in `lfs/.packages`, so the stamps disappear with
 `clean all` and cannot claim a package is present in an empty tree.
 
-A package that fails is built again. Three attempts in all, the last of them
-at `-j1`, and the stamp is written only if one of them succeeds. This is not
-for packages that are broken — those fail three times and take three times as
-long to say so. It is for the two failures that have nothing to do with the
-source: a `-j32` make that races, which the serial attempt settles, and this
-14900K faulting under sustained all-core load, which arrives as an internal
-compiler error or a signal 11 in a file that compiled yesterday and gets
-through on a second run. Either one used to end a forty-minute build at
-package sixty.
-
-Retrying is safe because re-running a package script after a failure is
-already the normal case here: `unpack` keeps the tree it finds, `apply_patch`
-notices a patch that is already in, `meson_setup` removes its build
-directory, and make resumes at the file that failed rather than at the start.
-Each attempt that is retried keeps its log as
-`logs/chroot-package-<name>.attempt-<n>.log`, so a package that only builds
-at `-j1` says so instead of silently succeeding; the last attempt keeps the
-usual `logs/chroot-package-<name>.log`. `PLINUX_ATTEMPTS` sets the count, and
-`PLINUX_ATTEMPTS=1` turns retrying off, which is what to use when the package
-genuinely does not build and the retries are only slowing the diagnosis down.
+A package that fails is built again, three times in all and the last of those
+at `-j1`, and the stamp is written only if one of them succeeds — see
+[build.sh](#buildsh), which describes the same retry for the toolchain walks.
 
 Staging adds and overwrites but never deletes, so a package that changes what
 it installs leaves the old files behind. Rebuilding mesa against libglvnd left

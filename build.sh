@@ -108,8 +108,9 @@ Notes:
   Can be run from any directory; paths resolve relative to the script.
   virt and chroot need root: they use losetup, mount and chroot.
   Components are built with MAKEFLAGS=-j32.
-  A package that fails is built again, three times in all and the last of
-  them at -j1. PLINUX_ATTEMPTS sets the count; 1 turns it off.
+  A toolchain step, a chapter 7 step or a package that fails is built again,
+  three times in all and the last of them at -j1. PLINUX_ATTEMPTS sets the
+  count; 1 turns it off.
 
 The whole build, from a fresh clone:
 
@@ -260,6 +261,86 @@ run(){
     sed 's/^/    /' <<< "$(tail -15 "${log_directory}/${name}.log")" >&2
   fi
 
+  return 1
+}
+
+# How many times a build step is run before the build gives up on it, and how
+# parallel each of those runs is.
+#
+# This is not for steps that are broken -- those fail three times and cost
+# three times as long to say so. It is for the two failures that are not about
+# the source at all. A -j32 make can race, hitting a generated header that is
+# not there yet in one package out of ninety and building on the next run; and
+# this machine is a 14900K, a part with a known history of faulting under
+# sustained all-core load, which arrives as an internal compiler error or a
+# signal 11 in a file that compiled yesterday and will compile tomorrow. Both
+# used to end a forty-minute run, and both are fixed by doing it again.
+#
+# The last attempt goes serial because the two want different treatment: a
+# compiler that faulted under load usually gets through on a second run at the
+# same -j, while a Makefile that raced only ever builds reliably at -j1.
+#
+# PLINUX_ATTEMPTS=1 turns it off, which is what to set when a step genuinely
+# does not build and the retries are only slowing the diagnosis down.
+build_attempts=${PLINUX_ATTEMPTS:-3}
+build_jobs_max=$(nproc)
+
+# The parallelism the attempt being run should use. Global, and looked up
+# inside toolchain_run, chroot_run and chroot_package_run rather than passed to
+# them, because an argument list is expanded once at the call and this has to
+# change between attempts of the same step.
+build_jobs=${build_jobs_max}
+
+# run(), with the step run again if it fails.
+#
+# The label is what the terminal and the status line call the step; the log
+# name is what run() calls it. They differ -- "chroot-package-vim" against
+# "vim   [61/93]" -- so both are passed.
+run_retry(){
+  local name=$1
+  local label=$2
+  shift 2
+
+  local attempt=0
+
+  while [ "${attempt}" -lt "${build_attempts}" ]; do
+    attempt=$((attempt + 1))
+
+    if [ "${attempt}" -eq "${build_attempts}" ] && [ "${build_attempts}" -gt 1 ]; then
+      build_jobs=1
+    else
+      build_jobs=${build_jobs_max}
+    fi
+
+    if [ "${attempt}" -gt 1 ]; then
+      echo "  ${label}: attempt ${attempt} of ${build_attempts}, -j${build_jobs}"
+      status_set "${label}   attempt ${attempt}/${build_attempts}"
+    fi
+
+    if run "${name}" "$@"; then
+      # Said out loud, because a step that needed a retry is a step worth
+      # looking at: three of them in one run is not luck, it is the hardware.
+      if [ "${attempt}" -gt 1 ]; then
+        echo "  ${label}: built on attempt ${attempt}; the earlier logs are ${log_directory}/${name}.attempt-*.log" >&2
+      fi
+
+      build_jobs=${build_jobs_max}
+      return 0
+    fi
+
+    # run() writes the same log path every time, so an attempt that is about
+    # to be retried is kept beside it before the next one overwrites it.
+    # Without this a package that fails at -j32 and builds at -j1 leaves no
+    # evidence that anything happened, and a racing Makefile stays unfixed.
+    #
+    # The last attempt is left where it is: when everything has failed, the
+    # log to read is the one under the name every other step uses.
+    if [ "${attempt}" -lt "${build_attempts}" ] && [ -f "${log_directory}/${name}.log" ]; then
+      mv "${log_directory}/${name}.log" "${log_directory}/${name}.attempt-${attempt}.log"
+    fi
+  done
+
+  build_jobs=${build_jobs_max}
   return 1
 }
 
@@ -437,6 +518,22 @@ fi
 # this machine about a compiler that is supposed to be independent of it.
 # toolchain/common.sh rebuilds the environment the book specifies from
 # nothing.
+
+# HOME and TERM are the only two carried through. TERM because the book
+# carries it and because make's output is unreadable without it; HOME because
+# a configure script that cannot find one occasionally writes into /, and that
+# is the host.
+#
+# A function rather than a command line in the loop below so that build_jobs is
+# read once per attempt: run_retry lowers it for the last one, and an argument
+# list is expanded before the first.
+toolchain_run(){
+  env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
+         LFS="${lfs_directory}"              \
+         MAKEFLAGS="-j${build_jobs}"         \
+         /bin/bash "$1"
+}
+
 build_toolchain(){
   local toolchain_selector=${1:-}
 
@@ -498,24 +595,26 @@ build_toolchain(){
     echo "  ${step}"
     status_set "${step}   [${toolchain_number}/${toolchain_total}]"
 
-    # HOME and TERM are the only two carried through. TERM because the book
-    # carries it and because make's output is unreadable without it; HOME
-    # because a configure script that cannot find one occasionally writes
-    # into /, and that is the host.
-    if run "toolchain-${step}" \
-         env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
-                LFS="${lfs_directory}" \
-                MAKEFLAGS="-j$(nproc)" \
-                /bin/bash "${script}"; then
+    if run_retry "toolchain-${step}" \
+         "${step}   [${toolchain_number}/${toolchain_total}]" \
+         toolchain_run "${script}"; then
       touch "${stamp_directory}/${step}"
     else
       status_set "${step}   [${toolchain_number}/${toolchain_total}]   FAILED"
       status_stop
       echo >&2
-      echo "${step} failed; the log is ${log_directory}/toolchain-${step}.log" >&2
+      echo "${step} failed ${build_attempts} time(s); the last log is ${log_directory}/toolchain-${step}.log" >&2
       # Each step here is the ground the next one stands on -- a glibc that
       # did not install cannot be compensated for by carrying on to
-      # libstdc++ -- so this stops rather than counting failures.
+      # libstdc++ -- so once run_retry has spent its attempts this stops,
+      # rather than counting failures and going on to the next step.
+      #
+      # A retry is worth attempting at all because these scripts are already
+      # built to survive a second run: unpack_cross keeps the tree it finds,
+      # and the two that could not be re-entered -- ncurses and file, which
+      # build twice out of one tree -- use unpack_cross_fresh. Those two
+      # restart from the tarball rather than resuming, so their retry costs
+      # the whole package.
       exit 1
     fi
   done < "${working_directory}/toolchain/order"
@@ -695,8 +794,8 @@ chroot_run(){
       TERM="${TERM:-dumb}"                      \
       PS1='(lfs chroot) \u:\w\$ '               \
       PATH=/musl/bin:/usr/bin:/usr/sbin          \
-      MAKEFLAGS="-j$(nproc)"                    \
-      TESTSUITEFLAGS="-j$(nproc)"               \
+      MAKEFLAGS="-j${build_jobs}"               \
+      TESTSUITEFLAGS="-j${build_jobs}"          \
       "$@"
 }
 
@@ -772,13 +871,15 @@ build_chroot(){
     echo "  ${step}"
     status_set "chroot ${step}   [${chroot_number}/${chroot_total}]"
 
-    if run "chroot-${step}" chroot_run /bin/bash "/toolchain/${step}.sh"; then
+    if run_retry "chroot-${step}" \
+         "chroot ${step}   [${chroot_number}/${chroot_total}]" \
+         chroot_run /bin/bash "/toolchain/${step}.sh"; then
       touch "${stamp_directory}/chroot-${step}"
     else
       status_set "chroot ${step}   FAILED"
       status_stop
       echo >&2
-      echo "${step} failed; the log is ${log_directory}/chroot-${step}.log" >&2
+      echo "${step} failed ${build_attempts} time(s); the last log is ${log_directory}/chroot-${step}.log" >&2
       exit 1
     fi
   done < "${working_directory}/toolchain/chroot/order"
@@ -811,6 +912,20 @@ build_chroot(){
 # Stamps are kept in lfs/.packages rather than obj/.packages, because a stamp
 # is a statement about the tree it was installed into and these are two
 # different trees. A package can be built in one and not the other.
+#
+# PLINUX_IN_CHROOT is what packages/common.sh keys on. Passed here rather than
+# set in chroot_run, so the chapter 7 steps -- which are the book's and know
+# nothing about packages/common.sh -- do not see it. Otherwise the same
+# environment chroot_run builds, including reading build_jobs per attempt.
+chroot_package_run(){
+  chroot "${lfs_directory}" /usr/bin/env -i    \
+      HOME=/root TERM="${TERM:-dumb}"          \
+      PATH=/musl/bin:/usr/bin:/usr/sbin        \
+      MAKEFLAGS="-j${build_jobs}"              \
+      PLINUX_IN_CHROOT=1                       \
+      /bin/bash "/packages/$1.sh"
+}
+
 build_chroot_packages(){
   local package_selector=${1:-}
 
@@ -839,28 +954,6 @@ build_chroot_packages(){
   local package_matched=
   local package_have=0
   local package_started=${SECONDS}
-
-  # How many times a package is built before the build gives up on it.
-  #
-  # This is not for packages that are broken -- those fail three times and
-  # cost three times as long. It is for the two failures that are not about
-  # the source at all. A -j32 make can race, hitting a missing generated
-  # header in one package out of ninety and building on the next run; and
-  # this machine is a 14900K, a part with a known history of faulting under
-  # sustained all-core load, which arrives as an internal compiler error or a
-  # signal 11 in a file that compiled yesterday and will compile tomorrow.
-  # Both used to end a forty-minute run, and both are fixed by doing it again.
-  #
-  # Retrying is safe because a package script re-run after a failure is
-  # already the normal case here: unpack() keeps the tree it finds,
-  # apply_patch() notices a patch that is already in, and meson_setup()
-  # removes its build directory. make picks up where it stopped, so a retry
-  # usually costs the one file that failed rather than the package.
-  #
-  # PLINUX_ATTEMPTS=1 turns it off, which is what to set when the package
-  # genuinely does not build and the retries are only slowing the diagnosis
-  # down.
-  local package_attempts=${PLINUX_ATTEMPTS:-3}
 
   local status_was_active=${status_active}
   [ -z "${status_was_active}" ] && status_start
@@ -894,69 +987,15 @@ build_chroot_packages(){
     echo "  ${package}"
     status_set "chroot ${package}   [${package_number}/${package_total}]"
 
-    local package_attempt=0
-    local package_jobs
-    local package_built=
-
-    while [ "${package_attempt}" -lt "${package_attempts}" ]; do
-      package_attempt=$((package_attempt + 1))
-
-      # Full parallelism until the last attempt, which goes serial. The two
-      # things this retries for want different treatment and this covers
-      # both: a compiler that faulted under load usually gets through on a
-      # second run at the same -j, while a Makefile that raced only ever
-      # builds reliably at -j1.
-      if [ "${package_attempt}" -eq "${package_attempts}" ] &&
-         [ "${package_attempts}" -gt 1 ]; then
-        package_jobs=1
-      else
-        package_jobs=$(nproc)
-      fi
-
-      if [ "${package_attempt}" -gt 1 ]; then
-        echo "  ${package}: attempt ${package_attempt} of ${package_attempts}, -j${package_jobs}"
-        status_set "chroot ${package}   [${package_number}/${package_total}]   attempt ${package_attempt}/${package_attempts}"
-      fi
-
-      # PLINUX_IN_CHROOT is what packages/common.sh keys on. Passed here rather
-      # than set in chroot_run, so the chapter 7 steps -- which are the book's
-      # and know nothing about packages/common.sh -- do not see it.
-      if run "chroot-package-${package}" \
-           chroot "${lfs_directory}" /usr/bin/env -i    \
-             HOME=/root TERM="${TERM:-dumb}"            \
-             PATH=/musl/bin:/usr/bin:/usr/sbin          \
-             MAKEFLAGS="-j${package_jobs}"              \
-             PLINUX_IN_CHROOT=1                         \
-             /bin/bash "/packages/${package}.sh"; then
-        package_built=1
-        break
-      fi
-
-      # run() writes the same log path every time, so an attempt that is about
-      # to be retried is kept beside it before the next one overwrites it.
-      # Without this a package that fails at -j32 and builds at -j1 leaves no
-      # evidence that anything happened, and a racing Makefile stays unfixed.
-      #
-      # The last attempt is left where it is: when everything has failed, the
-      # log to read is the one under the name every other step uses.
-      if [ "${package_attempt}" -lt "${package_attempts}" ] &&
-         [ -f "${log_directory}/chroot-package-${package}.log" ]; then
-        mv "${log_directory}/chroot-package-${package}.log" \
-           "${log_directory}/chroot-package-${package}.attempt-${package_attempt}.log"
-      fi
-    done
-
-    if [ -n "${package_built}" ]; then
+    if run_retry "chroot-package-${package}" \
+         "chroot ${package}   [${package_number}/${package_total}]" \
+         chroot_package_run "${package}"; then
       touch "${stamp_directory}/${package}"
-
-      if [ "${package_attempt}" -gt 1 ]; then
-        echo "  ${package}: built on attempt ${package_attempt}; the failed logs are ${log_directory}/chroot-package-${package}.attempt-*.log" >&2
-      fi
     else
       status_set "chroot ${package}   FAILED"
       status_stop
       echo >&2
-      echo "${package} failed ${package_attempts} time(s); the last log is ${log_directory}/chroot-package-${package}.log" >&2
+      echo "${package} failed ${build_attempts} time(s); the last log is ${log_directory}/chroot-package-${package}.log" >&2
       exit 1
     fi
   done < "${working_directory}/packages/order"
