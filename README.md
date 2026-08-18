@@ -33,7 +33,7 @@ is developed on runs plinux, and `sys/` is not a template for the image but the
 running system's actual configuration, reached by symlink. Changing a file
 there changes the workstation and the next image at the same time.
 
-The three ways to run it: `./run` boots the image under QEMU, `build.sh usb`
+The three ways to run it: `./run` boots the image under QEMU, `./usb.sh`
 writes it to a USB stick as a bootable rescue system that carries its own
 identifiers, and `build.sh` plus the `pboot` install steps put it on real
 hardware.
@@ -100,6 +100,7 @@ Everything with a `p` prefix is written for this project:
 
 ```
 build.sh              build into lfs/, or write lfs/ to a disk
+usb.sh                write lfs/ to a USB disk as a bootable rescue system
 configure             clone the kernel and pboot, install sys/kernel_config
 download.sh           fetch source tarballs into sources/
 wget-list-core        the sources the console system is built from
@@ -208,7 +209,7 @@ of the machine.
 | `git`, `wget` | `./configure` and `./download.sh` |
 | `upx` | compressing pboot |
 | `qemu-system-x86_64` | `./run` |
-| `sfdisk`, `mkfs.ext4`, `mkfs.fat` | `build.sh virt` and `build.sh usb` |
+| `sfdisk`, `mkfs.ext4`, `mkfs.fat` | `build.sh virt` and `usb.sh` |
 
 `docs/` carries the book's own `version-check.sh` in section 2.2; running it
 is the quickest way to find a missing one.
@@ -237,7 +238,7 @@ like a broken compiler but is only a missing interpreter.
 ./build.sh chroot umount   # take the chroot mounts down
 ./build.sh check           # find binaries whose libraries are missing
 ./build.sh virt            # copy lfs/ into a raw disk image
-./build.sh usb /dev/sdX    # write it to a USB disk as a bootable rescue system
+./usb.sh /dev/sdX          # write it to a USB disk as a bootable rescue system
 ./build.sh clean all       # clean sources and delete lfs/, after asking
 ```
 
@@ -412,7 +413,7 @@ The console system, 33 packages:
 | vim, less | the editor and the pager |
 | tzdata | the timezone database; `/etc/localtime` is America/Asuncion |
 | e2fsprogs | the root filesystem is ext4 and nothing could repair it: util-linux supplies `fsck`, but that is only a dispatcher |
-| dosfstools | the same for the EFI system partition, and `build.sh usb` needs `mkfs.fat` |
+| dosfstools | the same for the EFI system partition, and `usb.sh` needs `mkfs.fat` |
 | procps-ng | ps, top, free, pgrep |
 | expat | XML parsing, which dbus reads its configuration with |
 | dbus | the message bus; iwd will not start without one |
@@ -644,9 +645,13 @@ refreshed from the workstation: `CONFIG_DRM_VIRTIO_GPU` for the display, and
 ## Rescue USB
 
 ```sh
-sudo ./build.sh usb image     # build usb.img from lfs/
-sudo ./build.sh usb /dev/sdX  # write it to a stick, building it first if needed
+sudo ./usb.sh image     # build usb.img from lfs/
+sudo ./usb.sh /dev/sdX  # write it to a stick, building it first if needed
 ```
+
+This is its own script rather than a `build.sh` command because it builds
+nothing: it reads the tree `build.sh` leaves in `lfs/` and turns it into a
+disk. `sudo ./build.sh usb ...` still works and forwards here unchanged.
 
 `usb.img` is the rescue system as a file: GPT, a 256M FAT32 EFI system
 partition, and an ext4 root sized to the tree plus a quarter — about 2.3G for
@@ -752,7 +757,7 @@ names and kernel filenames hold 20 characters, parameters hold 100. A longer
 parameter line overflows into the next entry.
 
 On real hardware prefer `root=PARTUUID=...` over `/dev/nvme0n1p3`, which is what
-`build.sh usb` generates. NVMe controllers are numbered in the order their
+`usb.sh` generates. NVMe controllers are numbered in the order their
 probes finish, so with more than one drive the name is not stable across boots.
 The kernel resolves `PARTUUID=` by itself; `UUID=` needs an initramfs to
 resolve it, and there is none here. Add `rootwait` so the kernel waits for the
