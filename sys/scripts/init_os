@@ -63,17 +63,6 @@ pdevices
 # up, which cannot work: the seat is VT-bound and already has an active
 # client, so the new sway dies with "Device or resource busy" and takes the
 # useful contents of sway.log with it on the way past.
-if ! command -v sway > /dev/null; then
-	echo "init_os: no sway installed, staying on the console" >&2
-elif pgrep -x sway > /dev/null 2>&1; then
-	echo "init_os: sway already running" >&2
-else
-	[ -f /var/log/sway.log ] && mv -f /var/log/sway.log /var/log/sway.log.1
+#
 
-	dbus-run-session sway > /var/log/sway.log 2>&1
-	sway_status=$?
-
-	if [ "${sway_status}" -ne 0 ]; then
-		echo "init_os: sway exited ${sway_status}, see /var/log/sway.log" >&2
-	fi
-fi
+start_sway

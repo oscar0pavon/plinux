@@ -64,6 +64,8 @@ export XORG_PREFIX=/usr
 export XORG_CONFIG="--prefix=$XORG_PREFIX --sysconfdir=/etc \
     --localstatedir=/var"
 
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/lib64/pkgconfig
+
 
 ### The ROCK
 

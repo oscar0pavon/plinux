@@ -12,7 +12,8 @@ white_color="\[${white_color}"
 user="\u"
 work_space="\w"
 # Bash prompt
-export PS1="\r${color_name}${user}:${directory_color}${work_space}${white_color}$\]"
+#export PS1="\r${color_name}${user}:${directory_color}${work_space}${white_color}$\]"
+export PS1="\r${color_name}plinux:${directory_color}${work_space}${white_color}$\]"
 
 
 # On the workstation this file is a symlink into the repo and the first path
